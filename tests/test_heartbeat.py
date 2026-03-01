@@ -232,23 +232,27 @@ class TestStopExitsCleanly:
 
 class TestStateFileAtomicWrite:
     async def test_state_file_atomic_write(self, tmp_db, fast_config):
-        """HB-14: State file is written atomically (rename-based); no partial writes."""
+        """HB-14: State file is written atomically (replace-based); no partial writes.
+
+        Uses Path.replace() which is atomic on both POSIX and Windows (unlike
+        Path.rename() which raises FileExistsError on Windows when the target exists).
+        """
         import tempfile
 
         agent = make_stub_agent(tmp_db, fast_config)
         state_path = fast_config.state_dir / f"{fast_config.agent_id}.json"
 
-        rename_called = False
-        original_rename = Path.rename
+        replace_called = False
+        original_replace = Path.replace
 
-        def tracking_rename(self, target):
-            nonlocal rename_called
+        def tracking_replace(self, target):
+            nonlocal replace_called
             if str(self).endswith(".tmp"):
-                rename_called = True
-            return original_rename(self, target)
+                replace_called = True
+            return original_replace(self, target)
 
-        with patch.object(Path, "rename", tracking_rename):
+        with patch.object(Path, "replace", tracking_replace):
             await run_for_n_cycles(agent, 1)
 
         assert state_path.exists()
-        assert rename_called, "State file was not written via atomic rename (write-then-rename)"
+        assert replace_called, "State file was not written via atomic replace (write-then-replace)"
