@@ -41,7 +41,8 @@ Ship a working Factory cluster that can accept a natural-language goal, spin up 
 - Configurable interval and stagger offset (from `agents/*.yaml`)
 - Local state file (`runtime/state/<agent-id>.json`) with last heartbeat, current task
 - Heartbeat jitter (±30s random)
-- `runtime/notifier.py` — `Notifier` protocol + `StdoutNotifier` implementation
+- `runtime/notifier.py` — `Notifier` protocol + `StdoutNotifier` implementation [DONE - Plan 01]
+- `runtime/config.py` — `AgentConfig` Pydantic model + `load_agent_config()` [DONE - Plan 01]
 - Integration tests: two agents run staggered heartbeats without DB collision
 
 **Success Criteria:**

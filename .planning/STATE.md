@@ -12,16 +12,16 @@
 
 - **Milestone**: v0.1.0 — Factory MVP
 - **Phase**: 2 of 7 — Agent Heartbeat Framework
-- **Current Plan**: 02-00 complete (Wave 0 test stubs)
+- **Current Plan**: 02-01 complete (Wave 1: config + notifier)
 - **Status**: IN PROGRESS
-- **Progress**: `[██░░░░░░░░]` 14%
+- **Progress**: `[███░░░░░░░]` 21%
 
 ## Phase Completion Log
 
 | Phase | Name | Status |
 |-------|------|--------|
 | 1 | Core Runtime (DB + State Machine) | ✓ Complete (98.5% coverage, 80 tests) |
-| 2 | Agent Heartbeat Framework | In Progress — Plan 00 (Wave 0 stubs) complete |
+| 2 | Agent Heartbeat Framework | In Progress — Plans 00, 01 complete |
 | 3 | Boss Agent | — Pending |
 | 4 | Worker Agents | — Pending |
 | 5 | Factory Cluster | — Pending |
@@ -43,8 +43,8 @@
 - [x] `tests/test_config.py` — HB-10, HB-11 stubs (AgentConfig load + validation)
 - [x] `tests/test_notifier.py` — HB-07, HB-08, HB-09 stubs (Notifier protocol + StdoutNotifier)
 - [x] `tests/test_heartbeat.py` — HB-01 through HB-06, HB-12, HB-13, HB-14 stubs
-- [ ] `runtime/config.py` — AgentConfig model + load_agent_config() (Wave 1)
-- [ ] `runtime/notifier.py` — Notifier protocol + StdoutNotifier (Wave 1)
+- [x] `runtime/config.py` — AgentConfig model + load_agent_config() (Wave 1) — HB-10, HB-11
+- [x] `runtime/notifier.py` — Notifier protocol + StdoutNotifier (Wave 1) — HB-07, HB-08, HB-09
 - [ ] `runtime/heartbeat.py` — BaseAgent ABC with async heartbeat loop (Wave 2)
 
 ## Recent Decisions
@@ -56,6 +56,11 @@
 - Lazy imports in conftest fixtures: Phase 2 module imports inside fixture bodies to avoid ImportError before implementation
 - `run_for_n_cycles` helper uses direct attribute assignment (`agent._heartbeat = counted_heartbeat`) for bounded async test loops
 - Wave 0 first: all 14 requirement test stubs committed before any implementation code
+- frozen=True on AgentConfig — immutable after construction, consistent with Phase 1 models
+- yaml.safe_load() enforced in load_agent_config() — never yaml.load() (security requirement)
+- state_dir as Path field in AgentConfig — enables test fixture injection via tmp_path (resolves RESEARCH open question 1)
+- StdoutNotifier uses structural subtyping only — no inheritance from Notifier Protocol
+- @runtime_checkable on Notifier enables isinstance() checks at runtime
 
 ## Pending Todos
 
@@ -68,5 +73,5 @@
 ## Session Continuity
 
 Last session: 2026-03-01
-Stopped at: Phase 2, Plan 00 (Wave 0 test stubs) complete — ready for Plan 01 (Wave 1: config + notifier implementation)
+Stopped at: Phase 2, Plan 01 (Wave 1: config + notifier implementation) complete — ready for Plan 02 (Wave 2: BaseAgent heartbeat loop)
 Resume file: (none)
