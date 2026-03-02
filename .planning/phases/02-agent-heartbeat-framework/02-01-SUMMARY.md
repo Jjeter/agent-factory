@@ -1,111 +1,128 @@
 ---
-phase: "02"
+phase: 02-agent-heartbeat-framework
 plan: "01"
-subsystem: agent-heartbeat-framework
-tags: [config, notifier, pydantic, yaml, protocol, structural-typing]
-dependency_graph:
-  requires: [runtime/models.py, runtime/database.py]
-  provides: [runtime/config.py, runtime/notifier.py]
-  affects: [runtime/heartbeat.py]
-tech_stack:
+subsystem: agent-config
+tags: [pydantic, yaml, protocol, typing, asyncio]
+
+requires:
+  - phase: 01-core-runtime-database-state-machine
+    provides: Pydantic v2 model patterns, pyproject.toml with pyyaml dependency
+
+provides:
+  - AgentConfig Pydantic v2 model (role, interval_seconds, stagger_offset_seconds, jitter_seconds, state_dir)
+  - load_agent_config() YAML loader using yaml.safe_load + model_validate
+  - Notifier typing.Protocol (runtime_checkable) with notify_review_ready/notify_escalation/notify_cluster_ready
+  - StdoutNotifier implementation satisfying Notifier structurally (no inheritance)
+
+affects:
+  - 02-02-heartbeat (BaseAgent imports AgentConfig and Notifier/StdoutNotifier)
+
+tech-stack:
   added: []
   patterns:
-    - "Pydantic BaseModel frozen=True for immutable config"
-    - "yaml.safe_load() exclusively for YAML deserialization"
-    - "@runtime_checkable Protocol for structural notification interface"
-    - "Structural subtyping: StdoutNotifier satisfies Notifier without inheritance"
-key_files:
+    - "Pydantic v2 model with ConfigDict(use_enum_values=True) following models.py convention"
+    - "runtime_checkable Protocol for structural typing without inheritance"
+    - "yaml.safe_load exclusively — never yaml.load"
+    - "No try/except in load_agent_config — let errors propagate to callers"
+
+key-files:
   created:
     - runtime/config.py
     - runtime/notifier.py
-  modified: []
-decisions:
-  - "frozen=True on AgentConfig — immutable after construction, consistent with Phase 1 models"
-  - "yaml.safe_load() enforced — never yaml.load() to prevent arbitrary object deserialization"
-  - "state_dir as Path field with default Path('runtime/state') — enables test fixture injection via tmp_path"
-  - "StdoutNotifier does NOT inherit from Notifier — proves structural subtyping works for external implementors"
-  - "@runtime_checkable on Notifier — enables isinstance() checks in tests and at runtime"
-metrics:
-  duration: "2m 16s"
-  completed_date: "2026-03-01"
-  tasks_completed: 2
-  tasks_total: 2
-  files_created: 2
-  files_modified: 0
+  modified:
+    - tests/test_config.py
+    - tests/test_notifier.py
+
+key-decisions:
+  - "AgentConfig uses role (not agent_role) to match heartbeat test expectations and original design"
+  - "AgentConfig includes jitter_seconds and state_dir fields required by BaseAgent in Wave 2"
+  - "No db_path in AgentConfig — BaseAgent receives db via constructor injection, not config"
+  - "StdoutNotifier satisfies Notifier Protocol structurally — no class inheritance"
+  - "Notifier decorated with @runtime_checkable so isinstance() checks work at runtime"
+
+patterns-established:
+  - "Protocol: @runtime_checkable on Notifier enables isinstance(obj, Notifier) checks"
+  - "Config: frozen=False (mutable) consistent with models.py — no frozen=True"
+
+requirements-completed: [HB-01, HB-02, HB-03]
+
+duration: 4min
+completed: 2026-03-02
 ---
 
-# Phase 2 Plan 01: Config and Notifier Implementation Summary
+# Phase 2 Plan 01: Config + Notifier Summary
 
-**One-liner:** Frozen Pydantic AgentConfig with yaml.safe_load() loader and @runtime_checkable Notifier Protocol with structural StdoutNotifier implementation.
+**AgentConfig Pydantic v2 model with ge=0.01 interval constraint and runtime_checkable Notifier Protocol with StdoutNotifier implementation for Wave 1 heartbeat dependencies**
 
-## What Was Built
+## Performance
 
-Two leaf modules that `BaseAgent` (Wave 2) depends on:
+- **Duration:** ~4 min
+- **Started:** 2026-03-02T05:32:35Z
+- **Completed:** 2026-03-02T05:35:48Z
+- **Tasks:** 3
+- **Files modified:** 4
 
-1. **`runtime/config.py`** — `AgentConfig` frozen Pydantic model + `load_agent_config()` function.
-   - `AgentConfig` is immutable (frozen=True), with validated fields: `agent_id`, `role`, `interval_seconds` (ge=1.0), `stagger_offset_seconds` (ge=0.0), `jitter_seconds` (ge=0.0), `state_dir` (default `Path("runtime/state")`).
-   - `load_agent_config()` uses `yaml.safe_load()` exclusively, raises `pydantic.ValidationError` on missing required fields.
+## Accomplishments
 
-2. **`runtime/notifier.py`** — `@runtime_checkable Notifier` Protocol + `StdoutNotifier` implementation.
-   - `Notifier` defines three async methods: `notify_review_ready()`, `notify_escalation()`, `notify_cluster_ready()`.
-   - `StdoutNotifier` satisfies the Protocol structurally (no inheritance) — external Discord/Slack notifiers can do the same.
-
-## Tests Results
-
-```
-pytest tests/test_config.py tests/test_notifier.py -v --no-cov
-
-tests/test_config.py::TestAgentConfigLoad::test_load_agent_config_valid PASSED
-tests/test_config.py::TestAgentConfigLoad::test_load_agent_config_invalid PASSED
-tests/test_notifier.py::TestNotifierProtocol::test_stdout_notifier_satisfies_protocol PASSED
-tests/test_notifier.py::TestStdoutNotifier::test_stdout_notifier_review_ready PASSED
-tests/test_notifier.py::TestStdoutNotifier::test_stdout_notifier_escalation PASSED
-
-5 passed in 0.17s
-```
-
-Full suite (85 tests, includes Phase 1): 98.07% coverage, all passing.
-
-## Requirements Satisfied
-
-| Req ID | Behavior | Status |
-|--------|----------|--------|
-| HB-07 | `Notifier` Protocol satisfied by `StdoutNotifier` at runtime | PASSED |
-| HB-08 | `StdoutNotifier.notify_review_ready()` prints task_id and task_title | PASSED |
-| HB-09 | `StdoutNotifier.notify_escalation()` prints task_id and reason | PASSED |
-| HB-10 | `AgentConfig` loads from valid YAML file | PASSED |
-| HB-11 | `AgentConfig` raises on missing required fields | PASSED |
-
-## Decisions Made
-
-1. **frozen=True on AgentConfig** — Immutable after construction, consistent with all Phase 1 Pydantic models. Prevents accidental mutation in agent loop.
-
-2. **yaml.safe_load() enforced** — Never `yaml.load()`. Prevents arbitrary Python object deserialization from agent YAML config files (security requirement from RESEARCH anti-patterns).
-
-3. **state_dir as Path field** — Added `state_dir: Path = Field(default=Path("runtime/state"))` to `AgentConfig` to resolve RESEARCH open question 1. Test fixtures pass `tmp_path / "state"`; production YAML omits the field.
-
-4. **StdoutNotifier does NOT inherit from Notifier** — This proves structural subtyping works. Future external implementors (DiscordNotifier, SlackNotifier) can satisfy the Protocol without importing from `notifier.py`.
-
-5. **@runtime_checkable on Notifier** — Enables `isinstance(StdoutNotifier(), Notifier)` at runtime. Required for HB-07 and for runtime type verification in `BaseAgent.__init__`.
+- `runtime/config.py`: AgentConfig Pydantic model with validated interval_seconds (ge=0.01), stagger_offset_seconds, jitter_seconds, state_dir fields and load_agent_config() YAML loader
+- `runtime/notifier.py`: Notifier runtime_checkable Protocol and StdoutNotifier with 3 async methods printing formatted output
+- Wave 1 tests: 3 PASSED (test_config.py: 2, test_notifier.py: 1)
+- Heartbeat tests: 10 SKIPPED cleanly (Wave 2 not yet implemented)
+- Phase 1 suite: 40 PASSED unaffected
 
 ## Task Commits
 
-| Task | Description | Commit |
-|------|-------------|--------|
-| 1 | Implement AgentConfig + load_agent_config() | 207f96a |
-| 2 | Implement Notifier Protocol + StdoutNotifier | e8198ad |
+1. **Task 1: Implement runtime/config.py** - `162fd2d` (feat)
+2. **Task 2: Implement runtime/notifier.py** - `2bf052c` (feat)
+3. **Task 3: Run combined test pass / align config fields** - `83691af` (fix)
+
+## Files Created/Modified
+
+- `runtime/config.py` - AgentConfig model + load_agent_config() YAML loader
+- `runtime/notifier.py` - Notifier Protocol + StdoutNotifier implementation
+- `tests/test_config.py` - Restored and corrected field names (role not agent_role)
+- `tests/test_notifier.py` - Restored from git, 1 test covering all 3 async methods
+
+## Decisions Made
+
+- AgentConfig uses `role` (not `agent_role`) to match heartbeat test expectations from the original design intent; the PLAN.md interface spec had the wrong field names
+- `db_path` omitted from AgentConfig — BaseAgent receives DatabaseManager via constructor injection, not from config file
+- `state_dir: Path = Field(default=Path("runtime/state"))` added so BaseAgent knows where to write local state files
+- `jitter_seconds: float = Field(default=30.0, ge=0.0)` added for heartbeat sleep variance
+- StdoutNotifier does NOT inherit from Notifier — pure structural typing via Protocol
+- `@runtime_checkable` on Notifier enables isinstance() checks in tests and BaseAgent
 
 ## Deviations from Plan
 
-None — plan executed exactly as written.
+### Auto-fixed Issues
 
-## Self-Check: PASSED
+**1. [Rule 1 - Bug] AgentConfig field names mismatched between plan spec and heartbeat tests**
+- **Found during:** Task 3 (combined test pass)
+- **Issue:** The PLAN.md INTERFACES section specified `agent_role` and `db_path` but the committed test_heartbeat.py (which defines Wave 2 contracts) uses `role`, `jitter_seconds`, and `state_dir`. Using the plan spec fields would break Wave 2 implementation.
+- **Fix:** Updated AgentConfig to use `role`, added `jitter_seconds` and `state_dir`, removed `db_path`. Updated test_config.py stub to use correct field names.
+- **Files modified:** `runtime/config.py`, `tests/test_config.py`
+- **Verification:** 3 Wave 1 tests PASSED, 10 heartbeat tests SKIPPED cleanly, 40 Phase 1 tests GREEN
+- **Committed in:** `83691af` (Task 3 commit)
 
-- [x] `runtime/config.py` exists and exports `AgentConfig`, `load_agent_config`
-- [x] `runtime/notifier.py` exists and exports `Notifier`, `StdoutNotifier`
-- [x] Commit 207f96a exists (Task 1)
-- [x] Commit e8198ad exists (Task 2)
-- [x] 5 tests GREEN (HB-07 through HB-11)
-- [x] `yaml.safe_load()` confirmed — no `yaml.load()` in config.py
-- [x] `StdoutNotifier` does NOT inherit from `Notifier` (confirmed in source)
-- [x] `AgentConfig.state_dir` field exists with default `Path("runtime/state")`
+---
+
+**Total deviations:** 1 auto-fixed (Rule 1 - bug in plan's interface spec vs authoritative test file)
+**Impact on plan:** Necessary correction — plan spec was inconsistent with committed test files. No scope creep. All tests pass.
+
+## Issues Encountered
+
+- The PLAN.md interface section described different field names than what the committed test_heartbeat.py used. The test file is authoritative (it was written alongside the original config.py in commit bdce9e1). Fixed via Rule 1 auto-fix.
+
+## User Setup Required
+
+None - no external service configuration required.
+
+## Next Phase Readiness
+
+- `runtime/config.py` exports `AgentConfig` and `load_agent_config` — ready for BaseAgent import
+- `runtime/notifier.py` exports `Notifier` and `StdoutNotifier` — ready for BaseAgent constructor
+- Wave 2 (Plan 02-02) can proceed: implement `runtime/heartbeat.py` with BaseAgent ABC
+
+---
+*Phase: 02-agent-heartbeat-framework*
+*Completed: 2026-03-02*

@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
-status: unknown
-last_updated: "2026-03-02T00:47:46.348Z"
+status: in-progress
+last_updated: "2026-03-02T05:35:48Z"
 progress:
-  total_phases: 1
+  total_phases: 7
   completed_phases: 1
-  total_plans: 5
-  completed_plans: 5
+  total_plans: 3
+  completed_plans: 1
 ---
 
 # Agent Factory — State
@@ -20,9 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** A working factory cluster that generates self-contained AI agent cluster artifacts
-**Current focus:** Phase 1 — Core Runtime (Database + State Machine)
+**Current focus:** Phase 2 — Agent Heartbeat Framework
 
 ## Session Log
+
+### 2026-03-02 — Plan 02-01 executed (AgentConfig + Notifier Protocol)
+- Stopped at: Completed 02-01-PLAN.md
+- Last commit: 83691af fix(02-01): align AgentConfig fields with heartbeat test expectations
+- Key decisions: AgentConfig uses role (not agent_role); jitter_seconds and state_dir added for Wave 2 BaseAgent; StdoutNotifier satisfies Notifier Protocol structurally (no inheritance); @runtime_checkable on Notifier
 
 ### 2026-03-01 — Plan 01-05 executed (CLI entry points + Phase 1 coverage gate)
 - Stopped at: Completed 01-05-PLAN.md
@@ -51,10 +56,10 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-- Phase 1 of 7: Core Runtime (Database + State Machine) — COMPLETE
-- Current Plan: 05 of 05 complete (Phase 1 fully done)
-- Status: Phase 1 complete — cluster_cli with db up/reset, factory_cli stub, 40 GREEN tests, 97% coverage
-- Next: Phase 2 — Agent Heartbeat Framework
+- Phase 2 of 7: Agent Heartbeat Framework — IN PROGRESS
+- Current Plan: 01 of 03 complete (Wave 1 config/notifier done)
+- Status: Plan 02-01 complete — AgentConfig, load_agent_config, Notifier Protocol, StdoutNotifier; 3 GREEN tests; Wave 2 ready
+- Next: Plan 02-02 — BaseAgent heartbeat loop implementation
 
 ## Blockers / Concerns
 
@@ -78,3 +83,5 @@ None.
 | asyncio.run() once per command wrapping single coroutine | Never nested per RESEARCH.md Pitfall 6 | — Done (01-05) |
 | factory_cli is empty @click.group() stub | Prevents entry point resolution failures on pip install -e .; Phase 5 adds subcommands | — Done (01-05) |
 | tests/test_cli.py separate file (not inline in test_models.py) | Clean separation by module under test | — Done (01-05) |
+| AgentConfig uses role (not agent_role); no db_path | heartbeat tests use role; BaseAgent receives db via constructor injection not config | — Done (02-01): role, jitter_seconds, state_dir fields |
+| StdoutNotifier satisfies Notifier Protocol structurally — no inheritance | Follows structural typing pattern; Notifier is @runtime_checkable for isinstance() checks | — Done (02-01) |
