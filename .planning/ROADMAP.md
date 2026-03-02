@@ -30,7 +30,7 @@ Ship a working Factory cluster that can accept a natural-language goal, spin up 
 
 **Not included:** Agents, LLM calls, CLI, Docker
 
-**Plans:** 3/5 plans executed
+**Plans:** 4/5 plans executed
 
 Plans:
 - [x] 01-01-PLAN.md — Test scaffold + runtime/__init__.py + runtime/schema.sql

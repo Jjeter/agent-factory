@@ -11,6 +11,11 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Session Log
 
+### 2026-03-02 — Plan 01-04 executed (DatabaseManager + aiosqlite WAL)
+- Stopped at: Completed 01-04-PLAN.md
+- Last commit: 9b101b0 feat(01-04): update test_database.py from xfail stubs to GREEN tests
+- Key decisions: WAL mode assertion uses tmp_path (not :memory:) — WAL silently falls back to "memory" mode on in-memory DBs; DatabaseManager is connection factory only, no DML; pragmas via individual execute() not executescript to avoid implicit COMMIT
+
 ### 2026-03-02 — Plan 01-03 executed (TaskStateMachine + TDD)
 - Stopped at: Completed 01-03-PLAN.md
 - Last commit: 1bbd4df feat(01-03): implement TaskStateMachine with InvalidTransitionError
@@ -29,9 +34,9 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 ## Current Position
 
 - Phase 1 of 7: Core Runtime (Database + State Machine)
-- Current Plan: 03 of 05 complete
-- Status: Plan 01-03 complete — TaskStateMachine with 5 transitions, InvalidTransitionError, 100% coverage
-- Next: Plan 01-04 (database.py — DatabaseManager, aiosqlite WAL)
+- Current Plan: 04 of 05 complete
+- Status: Plan 01-04 complete — DatabaseManager with WAL, per-connection pragmas, init_schema/up/reset, 7 GREEN tests, 88% coverage
+- Next: Plan 01-05 (CLI — cluster db up/reset commands)
 
 ## Blockers / Concerns
 
@@ -41,10 +46,10 @@ None.
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| aiosqlite connection: 1 write + 1 read per agent | WAL-native, stagger handles write serialization | — Pending |
+| aiosqlite connection: 1 write + 1 read per agent | WAL-native, stagger handles write serialization | — Done (01-04): open_write/open_read both apply STARTUP_PRAGMAS |
 | TaskStateMachine class + Pydantic enum validation | Defense in depth, typed exceptions | — Done (01-03): TRANSITIONS dict + InvalidTransitionError with from_state/to_state attrs |
 | rejected = action not state | Cleaner state machine, rejection recorded in task_comment | — Done (TaskStatus has 5 values, no "rejected") |
-| Python runner over schema.sql, no Alembic | SQLite doesn't need migration versioning in v0.1 | — Pending |
+| Python runner over schema.sql, no Alembic | SQLite doesn't need migration versioning in v0.1 | — Done (01-04): up()/reset() async methods call init_schema() |
 | 100% coverage for state machine, 80% for DB layer | Pure logic fully testable, DB layer has I/O edges | — Done (01-03): state_machine.py at 100% (14/14 stmts) |
 | TRANSITIONS.get(current, set()) defensive pattern | Unknown current states raise InvalidTransitionError not KeyError | — Done (01-03) |
 | TaskStatus re-exported from runtime.state_machine | Single import line for callers instead of two | — Done (01-03) |
