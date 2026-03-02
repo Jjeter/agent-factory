@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: in-progress
-last_updated: "2026-03-02T05:37:00Z"
+last_updated: "2026-03-02T08:36:11Z"
 progress:
   total_phases: 7
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 3
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # Agent Factory — State
@@ -23,6 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 **Current focus:** Phase 2 — Agent Heartbeat Framework
 
 ## Session Log
+
+### 2026-03-02 — Plan 02-02 executed (BaseAgent heartbeat loop implementation)
+- Stopped at: Completed 02-02-PLAN.md
+- Last commit: 45ed7e4 feat(02-02): implement BaseAgent async heartbeat loop
+- Key decisions: AgentConfig model_validator normalizes role/agent_role and adds db_path; agent_status schema column renamed id->agent_id; _load_state() called at start() entry to trigger corrupt-file warning; module-level STATE_DIR constant for monkeypatching; error in hooks sets ERROR status but does not stop loop
 
 ### 2026-03-02 — Plan 02-00 executed (TDD RED — all 13 heartbeat test stubs)
 - Stopped at: Completed 02-00-PLAN.md
@@ -61,10 +66,10 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-- Phase 2 of 7: Agent Heartbeat Framework — IN PROGRESS
-- Current Plan: 02 of 03 complete (Wave 0 stubs + Wave 1 config/notifier done)
-- Status: Plan 02-00 complete (13 TDD stubs), 02-01 complete (AgentConfig, Notifier, StdoutNotifier); Wave 2 ready
-- Next: Plan 02-02 — BaseAgent heartbeat loop implementation
+- Phase 2 of 7: Agent Heartbeat Framework — COMPLETE
+- Current Plan: 03 of 03 complete (all waves: stubs + config/notifier + BaseAgent)
+- Status: Plan 02-02 complete (BaseAgent heartbeat loop, 10/10 tests GREEN, 97% coverage); Phase 2 DONE
+- Next: Phase 3 — Boss Agent (goal decomposition, task creation, peer review promotion)
 
 ## Blockers / Concerns
 
@@ -88,7 +93,10 @@ None.
 | asyncio.run() once per command wrapping single coroutine | Never nested per RESEARCH.md Pitfall 6 | — Done (01-05) |
 | factory_cli is empty @click.group() stub | Prevents entry point resolution failures on pip install -e .; Phase 5 adds subcommands | — Done (01-05) |
 | tests/test_cli.py separate file (not inline in test_models.py) | Clean separation by module under test | — Done (01-05) |
-| AgentConfig uses role (not agent_role); no db_path | heartbeat tests use role; BaseAgent receives db via constructor injection not config | — Done (02-01): role, jitter_seconds, state_dir fields |
+| AgentConfig uses role (not agent_role); no db_path | heartbeat tests use role; BaseAgent receives db via constructor injection not config | — Updated (02-02): model_validator normalizes both role/agent_role; db_path field added |
 | StdoutNotifier satisfies Notifier Protocol structurally — no inheritance | Follows structural typing pattern; Notifier is @runtime_checkable for isinstance() checks | — Done (02-01) |
 | module-level _has_heartbeat sentinel for test_heartbeat.py (vs importorskip) | Enables FixedTickAgent helper class to be conditionally defined at module level; keeps tests DRY | — Done (02-00) |
 | FixedTickAgent stops loop via _stop_event.set() after N ticks | Assumes BaseAgent exposes _stop_event (asyncio.Event) and _tick() as overridable method | — Done (02-00) |
+| agent_status schema uses agent_id (not id) as PRIMARY KEY | test queries use WHERE agent_id = ? — column name must match | — Done (02-02): schema.sql updated |
+| BaseAgent._write_state_file() references module-level STATE_DIR | monkeypatch.setattr(heartbeat_mod, "STATE_DIR", ...) redirects state files in tests | — Done (02-02) |
+| Error in tick body sets status=ERROR, loop continues (stop_event NOT set) | Transient errors should not kill agent; subclass can override _tick() for custom behavior | — Done (02-02) |

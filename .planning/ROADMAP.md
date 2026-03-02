@@ -61,6 +61,13 @@ Plans:
 
 **Not included:** LLM calls (agents are no-op stubs in this phase)
 
+**Status: COMPLETE** — 3/3 plans executed, 13 GREEN tests (Phase 2), 97% total coverage
+
+Plans:
+- [x] 02-00-PLAN.md — TDD RED stubs: 13 heartbeat tests (HB-01 through HB-13)
+- [x] 02-01-PLAN.md — AgentConfig (Pydantic), Notifier Protocol, StdoutNotifier
+- [x] 02-02-PLAN.md — BaseAgent heartbeat loop (stagger, UPSERT, state file, graceful shutdown)
+
 ---
 
 ## Phase 3: Boss Agent
