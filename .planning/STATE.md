@@ -11,6 +11,11 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Session Log
 
+### 2026-03-01 — Plan 01-05 executed (CLI entry points + Phase 1 coverage gate)
+- Stopped at: Completed 01-05-PLAN.md
+- Last commit: ff800ef test(01-05): add tests/test_cli.py for CLI coverage to 97%
+- Key decisions: Lazy DatabaseManager import inside async helpers; asyncio.run() once per command wrapping single coroutine; factory_cli is empty stub group; added tests/test_cli.py (not inline in test_models.py) for clean separation
+
 ### 2026-03-02 — Plan 01-04 executed (DatabaseManager + aiosqlite WAL)
 - Stopped at: Completed 01-04-PLAN.md
 - Last commit: 9b101b0 feat(01-04): update test_database.py from xfail stubs to GREEN tests
@@ -33,10 +38,10 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-- Phase 1 of 7: Core Runtime (Database + State Machine)
-- Current Plan: 04 of 05 complete
-- Status: Plan 01-04 complete — DatabaseManager with WAL, per-connection pragmas, init_schema/up/reset, 7 GREEN tests, 88% coverage
-- Next: Plan 01-05 (CLI — cluster db up/reset commands)
+- Phase 1 of 7: Core Runtime (Database + State Machine) — COMPLETE
+- Current Plan: 05 of 05 complete (Phase 1 fully done)
+- Status: Phase 1 complete — cluster_cli with db up/reset, factory_cli stub, 40 GREEN tests, 97% coverage
+- Next: Phase 2 — Agent Heartbeat Framework
 
 ## Blockers / Concerns
 
@@ -56,3 +61,7 @@ None.
 | schema.sql is source of truth; DatabaseManager uses Path(__file__).parent / 'schema.sql' | Keeps DDL co-located with code; factory copies to cluster output in Phase 5 | — Done (01-01) |
 | importorskip at module level for test_models.py and test_state_machine.py | Cleaner than per-test skip; entire module skips when implementation absent | — Done (01-01) |
 | create_goal/create_task as plain async helpers (not fixtures) | Callers pass open db connection explicitly — test bodies stay readable | — Done (01-01) |
+| Lazy DatabaseManager import in CLI async helpers | Keeps CLI startup fast, avoids circular import risk | — Done (01-05) |
+| asyncio.run() once per command wrapping single coroutine | Never nested per RESEARCH.md Pitfall 6 | — Done (01-05) |
+| factory_cli is empty @click.group() stub | Prevents entry point resolution failures on pip install -e .; Phase 5 adds subcommands | — Done (01-05) |
+| tests/test_cli.py separate file (not inline in test_models.py) | Clean separation by module under test | — Done (01-05) |
