@@ -11,10 +11,11 @@ class AgentConfig(BaseModel):
     model_config = ConfigDict(use_enum_values=True)
 
     agent_id: str
-    agent_role: str
-    db_path: str
+    role: str
     interval_seconds: float = Field(default=600.0, ge=0.01)
     stagger_offset_seconds: float = Field(default=0.0, ge=0.0)
+    jitter_seconds: float = Field(default=30.0, ge=0.0)
+    state_dir: Path = Field(default=Path("runtime/state"))
 
 
 def load_agent_config(path: Path) -> AgentConfig:

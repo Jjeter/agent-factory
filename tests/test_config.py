@@ -18,16 +18,14 @@ def test_interval_ge_constraint():
     with pytest.raises(pydantic.ValidationError):
         AgentConfig(
             agent_id="a",
-            agent_role="worker",
-            db_path="/tmp/x.db",
+            role="worker",
             interval_seconds=0.005,
         )
 
     # Minimum boundary value should succeed
     cfg = AgentConfig(
         agent_id="a",
-        agent_role="worker",
-        db_path="/tmp/x.db",
+        role="worker",
         interval_seconds=0.01,
     )
     assert cfg.interval_seconds == 0.01
@@ -41,11 +39,11 @@ def test_load_agent_config(tmp_path):
 
     yaml_file = tmp_path / "agent.yaml"
     yaml_file.write_text(
-        "agent_id: test-agent\nagent_role: worker\ndb_path: /tmp/test.db\n"
+        "agent_id: test-agent\nrole: worker\n"
     )
 
     result = load_agent_config(yaml_file)
 
     assert isinstance(result, AgentConfig)
     assert result.agent_id == "test-agent"
-    assert result.agent_role == "worker"
+    assert result.role == "worker"
