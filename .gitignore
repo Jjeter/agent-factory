@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.eggs/
+
+# Environment & secrets
+.env
+*.env
+.env.local
+
+# Test & coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# SQLite databases (cluster DBs are runtime artifacts, not source)
+*.db
+*.sqlite
+*.sqlite3
+
+# Local agent state
+runtime/state/
+
+# Docker
+clusters/*/db/*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

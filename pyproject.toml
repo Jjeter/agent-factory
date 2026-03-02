@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-factory"
+version = "0.1.0"
+description = "A meta-level agentic workflow that creates independent, self-contained AI agent clusters"
+requires-python = ">=3.12"
+dependencies = [
+    "anthropic>=0.40.0",
+    "pydantic>=2.0.0",
+    "aiosqlite>=0.20.0",
+    "pyyaml>=6.0.0",
+    "click>=8.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+]
+
+[project.scripts]
+agent-factory = "runtime.cli:factory_cli"
+cluster = "runtime.cli:cluster_cli"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--cov=runtime --cov-report=term-missing --cov-fail-under=80"
+
+[tool.hatch.build.targets.wheel]
+packages = ["runtime"]
