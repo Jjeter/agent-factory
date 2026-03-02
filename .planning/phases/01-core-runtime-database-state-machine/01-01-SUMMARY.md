@@ -125,6 +125,19 @@ None - no external service configuration required.
 - tests/test_database.py is ready to activate once runtime/database.py exists (Plan 04)
 - `pytest tests/ -q` exits 0 — no blockers for downstream plans
 
+## Self-Check: PASSED
+
+- FOUND: runtime/__init__.py
+- FOUND: runtime/schema.sql
+- FOUND: tests/__init__.py
+- FOUND: tests/conftest.py
+- FOUND: tests/test_database.py
+- FOUND: tests/test_models.py
+- FOUND: tests/test_state_machine.py
+- FOUND: .planning/phases/01-core-runtime-database-state-machine/01-01-SUMMARY.md
+- FOUND: 7cdcd98 (Task 1 commit)
+- FOUND: df02bcd (Task 2 commit)
+
 ---
 *Phase: 01-core-runtime-database-state-machine*
 *Completed: 2026-03-02*
