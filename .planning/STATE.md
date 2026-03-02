@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: in-progress
-last_updated: "2026-03-02T05:35:48Z"
+last_updated: "2026-03-02T05:37:00Z"
 progress:
   total_phases: 7
   completed_phases: 1
   total_plans: 3
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Agent Factory — State
@@ -23,6 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 **Current focus:** Phase 2 — Agent Heartbeat Framework
 
 ## Session Log
+
+### 2026-03-02 — Plan 02-00 executed (TDD RED — all 13 heartbeat test stubs)
+- Stopped at: Completed 02-00-PLAN.md
+- Last commit: 65c6423 chore(02-00): verify .gitignore has runtime/state/ and full Phase 2 collection
+- Key decisions: module-level _has_heartbeat sentinel for test_heartbeat.py (enables FixedTickAgent helper); pytest.importorskip inside test body for simpler single-module stubs; FixedTickAgent stops loop via _stop_event.set() after N ticks
 
 ### 2026-03-02 — Plan 02-01 executed (AgentConfig + Notifier Protocol)
 - Stopped at: Completed 02-01-PLAN.md
@@ -57,8 +62,8 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 ## Current Position
 
 - Phase 2 of 7: Agent Heartbeat Framework — IN PROGRESS
-- Current Plan: 01 of 03 complete (Wave 1 config/notifier done)
-- Status: Plan 02-01 complete — AgentConfig, load_agent_config, Notifier Protocol, StdoutNotifier; 3 GREEN tests; Wave 2 ready
+- Current Plan: 02 of 03 complete (Wave 0 stubs + Wave 1 config/notifier done)
+- Status: Plan 02-00 complete (13 TDD stubs), 02-01 complete (AgentConfig, Notifier, StdoutNotifier); Wave 2 ready
 - Next: Plan 02-02 — BaseAgent heartbeat loop implementation
 
 ## Blockers / Concerns
@@ -85,3 +90,5 @@ None.
 | tests/test_cli.py separate file (not inline in test_models.py) | Clean separation by module under test | — Done (01-05) |
 | AgentConfig uses role (not agent_role); no db_path | heartbeat tests use role; BaseAgent receives db via constructor injection not config | — Done (02-01): role, jitter_seconds, state_dir fields |
 | StdoutNotifier satisfies Notifier Protocol structurally — no inheritance | Follows structural typing pattern; Notifier is @runtime_checkable for isinstance() checks | — Done (02-01) |
+| module-level _has_heartbeat sentinel for test_heartbeat.py (vs importorskip) | Enables FixedTickAgent helper class to be conditionally defined at module level; keeps tests DRY | — Done (02-00) |
+| FixedTickAgent stops loop via _stop_event.set() after N ticks | Assumes BaseAgent exposes _stop_event (asyncio.Event) and _tick() as overridable method | — Done (02-00) |

@@ -2,103 +2,118 @@
 phase: 02-agent-heartbeat-framework
 plan: "00"
 subsystem: testing
-tags: [pytest, pytest-asyncio, tdd, heartbeat, wave-0, nyquist]
+tags: [pytest, tdd, heartbeat, asyncio, importorskip]
 
-# Dependency graph
 requires:
-  - phase: 01-core-runtime
-    provides: Database, AgentStatusRecord, models — all imported in test stubs and conftest fixtures
-provides:
-  - tests/conftest.py with tmp_db, fast_config, stub_agent shared fixtures
-  - tests/test_config.py with HB-10, HB-11 stubs (AgentConfig load + validation)
-  - tests/test_notifier.py with HB-07, HB-08, HB-09 stubs (Notifier protocol + StdoutNotifier)
-  - tests/test_heartbeat.py with HB-01 through HB-06, HB-12, HB-13, HB-14 stubs (BaseAgent behaviors)
-affects:
-  - 02-01 (Wave 1: config + notifier implementation — tests are pre-written RED)
-  - 02-02 (Wave 2: heartbeat implementation — tests are pre-written RED)
+  - phase: 01-core-runtime-database-state-machine
+    provides: DatabaseManager, TaskStateMachine, AgentStatus models — used by heartbeat test fixtures
 
-# Tech tracking
+provides:
+  - 13 pytest stub tests for HB-01 through HB-13 that skip cleanly before implementation
+  - Full test contract for AgentConfig, Notifier protocol, and BaseAgent heartbeat behaviors
+  - test_config.py: HB-01 (interval constraint) and HB-02 (YAML load)
+  - test_notifier.py: HB-03 (StdoutNotifier protocol)
+  - test_heartbeat.py: HB-04 through HB-13 (stagger, UPSERT, transitions, state file, cancel, stop, concurrency, hook order, jitter)
+
+affects:
+  - 02-01 (Wave 1 implementation — AgentConfig, Notifier): these stubs define exact interfaces
+  - 02-02 (Wave 2 implementation — BaseAgent): these stubs define heartbeat loop contract
+
 tech-stack:
   added: []
   patterns:
-    - "Lazy import pattern: Phase 2 modules imported inside fixture bodies to avoid ImportError before implementation"
-    - "fast_config pattern: AgentConfig(interval_seconds=0.1, jitter_seconds=0.0, stagger_offset_seconds=0.0) for sub-second tests"
-    - "run_for_n_cycles helper: wraps _heartbeat to count cycles and call stop() after N, enabling bounded async test loops"
-    - "atomic rename tracking: patch Path.rename + check .tmp suffix to verify write-then-rename pattern"
+    - "module-level import sentinel: try/except ImportError sets _has_heartbeat flag, each test checks flag and calls pytest.skip"
+    - "pytest.importorskip inside test body for single-module stubs (test_config.py, test_notifier.py)"
+    - "FixedTickAgent helper class defined conditionally (only when _has_heartbeat=True) to stop loop after N ticks"
+    - "monkeypatch STATE_DIR to tmp_path to prevent state files writing to real runtime/state/ during tests"
 
 key-files:
   created:
-    - tests/conftest.py
     - tests/test_config.py
     - tests/test_notifier.py
     - tests/test_heartbeat.py
-  modified: []
+  modified:
+    - .gitignore (added to version control — confirmed runtime/state/ present on line 29)
+    - pyproject.toml (added to version control)
 
 key-decisions:
-  - "Lazy imports in conftest fixtures: all Phase 2 module imports (runtime.config, runtime.heartbeat, runtime.notifier) are inside fixture bodies, not at module level, so conftest.py itself always imports cleanly before implementation exists"
-  - "run_for_n_cycles uses direct attribute assignment (_heartbeat = counted_heartbeat) rather than types.MethodType binding, avoiding the need for __func__ access on already-bound methods"
-  - "Stagger test uses abs(duration - 0.05) < 0.001 tolerance to handle float comparison correctly"
-  - "HB-14 atomic write test patches Path.rename and checks .tmp suffix — implementation-agnostic approach that works with both tempfile.NamedTemporaryFile and manual tmp path patterns"
+  - "Module-level sentinel (_has_heartbeat) preferred over pytest.importorskip at module level for test_heartbeat.py — allows FixedTickAgent helper class to be conditionally defined"
+  - "pytest.importorskip used inside test body for simpler single-import stubs (test_config.py, test_notifier.py)"
+  - "FixedTickAgent stops loop by setting self._stop_event after N _tick() calls — relies on BaseAgent exposing _stop_event and _tick() as overridable"
 
 patterns-established:
-  - "Wave 0 first: test stubs committed before any implementation code, per Nyquist validation requirement in config.json"
-  - "All 13 test functions named to match the validation map in 02-RESEARCH.md exactly"
+  - "TDD RED phase: stubs define interface contract before implementation — Wave 1 and Wave 2 must satisfy these exact test names and behaviors"
+  - "_make_config() helper builds AgentConfig for tests — when AgentConfig field names change, update one place"
 
-requirements-completed: [HB-01, HB-02, HB-03, HB-04, HB-05, HB-06, HB-07, HB-08, HB-09, HB-10, HB-11, HB-12, HB-13, HB-14]
+requirements-completed: [HB-01, HB-02, HB-03, HB-04, HB-05, HB-06, HB-07, HB-08, HB-09, HB-10, HB-11, HB-12, HB-13]
 
-# Metrics
-duration: 2min
-completed: 2026-03-01
+duration: 4min
+completed: 2026-03-02
 ---
 
-# Phase 2 Plan 00: Wave 0 Test Stubs Summary
+# Phase 2 Plan 00: TDD RED Phase — 13 Heartbeat Test Stubs Summary
 
-**13 pytest stubs covering all 14 Phase 2 requirements written before any implementation, with lazy imports in conftest ensuring zero collection errors until runtime**
+**13 pytest stub tests (HB-01 through HB-13) across 3 files using module-level import sentinels and importorskip, all skipping cleanly before Wave 1/2 implementation exists**
 
 ## Performance
 
-- **Duration:** 2 min
-- **Started:** 2026-03-01T04:10:09Z
-- **Completed:** 2026-03-01T04:12:12Z
-- **Tasks:** 2
-- **Files modified:** 4
+- **Duration:** 4 min
+- **Started:** 2026-03-02T05:32:07Z
+- **Completed:** 2026-03-02T05:36:49Z
+- **Tasks:** 4
+- **Files modified:** 5
 
 ## Accomplishments
 
-- Created `tests/conftest.py` with three shared async fixtures (tmp_db, fast_config, stub_agent) using lazy imports to prevent collection failures before Phase 2 modules exist
-- Created `tests/test_config.py` (2 tests), `tests/test_notifier.py` (3 tests), `tests/test_heartbeat.py` (8 tests) — all 13 stubs collected by pytest with zero errors
-- Established `run_for_n_cycles` helper pattern that wraps `_heartbeat` with a cycle counter for bounded async test loops without production-length sleeps
-- All tests confirmed RED: `pytest --collect-only` collects 13 tests; full run would fail at import (runtime.config, runtime.notifier, runtime.heartbeat do not yet exist)
+- Created test_config.py with 2 stubs (HB-01: interval ge constraint, HB-02: YAML load) using pytest.importorskip inside test bodies
+- Created test_notifier.py with 1 stub (HB-03: StdoutNotifier protocol async methods + capsys output verification) as async test
+- Created test_heartbeat.py with 10 stubs (HB-04 through HB-13) using module-level _has_heartbeat sentinel and FixedTickAgent helper
+- All 13 tests collect cleanly via `pytest --collect-only` (0 ImportErrors, 0 errors) and all 40 Phase 1 tests still pass
 
 ## Task Commits
 
 Each task was committed atomically:
 
-1. **Task 1: Create tests/conftest.py with shared fixtures** - `a05f1cf` (test)
-2. **Task 2: Create test stubs for config, notifier, and heartbeat** - `73e3b91` (test)
-
-**Plan metadata:** (committed as part of final docs commit)
+1. **Task 1: tests/test_config.py** - `5501465` (test)
+2. **Task 2: tests/test_notifier.py** - `bd6f9ac` (test)
+3. **Task 3: tests/test_heartbeat.py** - `5559cc9` (test)
+4. **Task 4: Verify .gitignore + full collection** - `65c6423` (chore)
 
 ## Files Created/Modified
 
-- `tests/conftest.py` — Shared async fixtures: tmp_db (Database), fast_config (AgentConfig 0.1s interval), stub_agent (concrete no-op StubAgent)
-- `tests/test_config.py` — HB-10: valid YAML load; HB-11: missing fields raise ValidationError
-- `tests/test_notifier.py` — HB-07: isinstance Protocol check; HB-08: review_ready stdout; HB-09: escalation stdout
-- `tests/test_heartbeat.py` — HB-01+02: hook override proof; HB-03: state file per cycle; HB-04: jitter sleep; HB-05: stagger once; HB-06: two agents no collision; HB-12: agent_status upsert; HB-13: stop() clean exit; HB-14: atomic rename
+- `tests/test_config.py` - HB-01 (interval_seconds ge=0.01 pydantic constraint) and HB-02 (YAML round-trip via load_agent_config)
+- `tests/test_notifier.py` - HB-03 (StdoutNotifier async methods, capsys output verification)
+- `tests/test_heartbeat.py` - HB-04 through HB-13 (stagger delay, UPSERT, status transitions, state file, corrupt state, CancelledError, stop event, concurrency, hook order, jitter clamping)
+- `.gitignore` - Added to git version control (confirmed runtime/state/ present)
+- `pyproject.toml` - Added to git version control
 
 ## Decisions Made
 
-- Lazy imports inside fixture bodies instead of module-level imports so conftest.py always loads cleanly before Wave 1 implementation exists
-- `run_for_n_cycles` uses direct attribute assignment (`agent._heartbeat = counted_heartbeat`) rather than `types.MethodType` to avoid needing `__func__` access on already-bound coroutine methods
-- HB-14 atomic write test patches `Path.rename` and checks `.tmp` suffix — implementation-agnostic and compatible with `tempfile.NamedTemporaryFile` + rename pattern documented in RESEARCH.md
+- Module-level import sentinel (`_has_heartbeat`) chosen for test_heartbeat.py (vs. importorskip inside each test) because it enables the `FixedTickAgent` helper class to be conditionally defined at module level, keeping tests DRY
+- `pytest.importorskip` inside test body used for simpler files where only one module is needed and no shared helper class is required
+- FixedTickAgent stops the heartbeat loop by calling `self._stop_event.set()` after N `_tick()` calls — this implies BaseAgent exposes `_stop_event` as an asyncio.Event and `_tick()` as an overridable method
 
 ## Deviations from Plan
 
-None - plan executed exactly as written.
+### Auto-fixed Issues
+
+**1. [Rule 3 - Blocking] test_heartbeat.py pre-existed with incorrect structure**
+- **Found during:** Task 3 (create test_heartbeat.py)
+- **Issue:** A prior hook had generated a test_heartbeat.py using direct imports without importorskip guards and referencing non-existent fixtures (stub_agent, tmp_db, fast_config) and wrong class name (runtime.database.Database vs DatabaseManager). Collection failed with 7 errors.
+- **Fix:** Overwrote with correct module-level sentinel pattern matching the plan spec
+- **Files modified:** tests/test_heartbeat.py
+- **Verification:** 10 tests collect, all 10 skip cleanly
+- **Committed in:** 5559cc9 (Task 3 commit)
+
+---
+
+**Total deviations:** 1 auto-fixed (1 blocking — pre-existing incorrect file)
+**Impact on plan:** Necessary correction to make collection work. No scope creep.
 
 ## Issues Encountered
 
-None.
+- A Prettier/linter hook modified test_config.py after Task 1 commit, changing `agent_role` to `role` and removing `db_path` from the AgentConfig constructor calls. The system indicated this was intentional, so the modified version was retained. This may affect Wave 1 implementation if AgentConfig uses `agent_role` as specified in PLAN.md vs. `role` as the hook assumes.
+- test_notifier.py was also modified by a hook after Task 2 commit; had to overwrite with correct importorskip pattern before committing.
 
 ## User Setup Required
 
@@ -106,11 +121,22 @@ None - no external service configuration required.
 
 ## Next Phase Readiness
 
-- Wave 0 stubs complete: all 14 requirement test functions named and collecting
-- Wave 1 executor can run `pytest tests/test_config.py tests/test_notifier.py -x` immediately to verify RED, then implement `runtime/config.py` and `runtime/notifier.py` to turn GREEN
-- Wave 2 executor can run `pytest tests/test_heartbeat.py -x` to verify RED, then implement `runtime/heartbeat.py`
-- No blockers
+- All 13 test stubs ready for Wave 1 (AgentConfig + Notifier) and Wave 2 (BaseAgent) implementations
+- Wave 1 (02-01) must implement `runtime/config.py` (AgentConfig with interval ge constraint, load_agent_config) and `runtime/notifier.py` (Notifier protocol, StdoutNotifier)
+- Wave 2 (02-02) must implement `runtime/heartbeat.py` (BaseAgent with all HB-04 through HB-13 behaviors)
+- Note: Hook modified test_config.py to use `role` (not `agent_role`) — Wave 1 implementer should confirm correct field name from REQUIREMENTS.md
 
 ---
 *Phase: 02-agent-heartbeat-framework*
-*Completed: 2026-03-01*
+*Completed: 2026-03-02*
+
+## Self-Check: PASSED
+
+- FOUND: tests/test_config.py
+- FOUND: tests/test_notifier.py
+- FOUND: tests/test_heartbeat.py
+- FOUND: .planning/phases/02-agent-heartbeat-framework/02-00-SUMMARY.md
+- FOUND commit 5501465 (Task 1)
+- FOUND commit bd6f9ac (Task 2)
+- FOUND commit 5559cc9 (Task 3)
+- FOUND commit 65c6423 (Task 4)
