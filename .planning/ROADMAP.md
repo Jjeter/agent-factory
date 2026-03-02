@@ -30,12 +30,12 @@ Ship a working Factory cluster that can accept a natural-language goal, spin up 
 
 **Not included:** Agents, LLM calls, CLI, Docker
 
-**Plans:** 2/5 plans executed
+**Plans:** 1/5 plans executed
 
 Plans:
 - [x] 01-01-PLAN.md — Test scaffold + runtime/__init__.py + runtime/schema.sql
-- [x] 01-02-PLAN.md — runtime/models.py (7 Pydantic models + 4 str Enums)
-- [ ] 01-03-PLAN.md — runtime/state_machine.py (TDD: TaskStateMachine + InvalidTransitionError)
+- [ ] 01-02-PLAN.md — runtime/state_machine.py (TDD: TaskStateMachine + InvalidTransitionError)
+- [ ] 01-03-PLAN.md — runtime/models.py (7 Pydantic models + 4 str Enums)
 - [ ] 01-04-PLAN.md — runtime/database.py (DatabaseManager with WAL pragmas)
 - [ ] 01-05-PLAN.md — runtime/cli.py (cluster db up/reset) + full test suite to GREEN
 
