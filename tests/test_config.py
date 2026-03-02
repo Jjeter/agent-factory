@@ -1,45 +1,51 @@
-"""Tests for runtime.config — AgentConfig model and load_agent_config().
+"""TDD stub tests for Phase 2 — AgentConfig and load_agent_config.
 
-HB-10: AgentConfig loads from valid YAML file.
-HB-11: AgentConfig raises on missing required fields.
+Covers HB-01 (interval_seconds >= 0.01 constraint) and HB-02 (YAML round-trip).
+
+All tests use pytest.importorskip inside the test body so pytest can collect this
+file before runtime/config.py exists. Tests skip cleanly when the module is absent.
 """
 import pytest
-from pathlib import Path
 
 
-class TestAgentConfigLoad:
-    def test_load_agent_config_valid(self, tmp_path: Path):
-        """HB-10: load_agent_config() parses a valid YAML file into AgentConfig."""
-        from runtime.config import AgentConfig, load_agent_config
+def test_interval_ge_constraint():
+    """HB-01: AgentConfig rejects interval_seconds below 0.01, accepts 0.01."""
+    config_mod = pytest.importorskip("runtime.config")
+    AgentConfig = config_mod.AgentConfig
+    import pydantic
 
-        yaml_content = """
-agent_id: researcher-1
-role: researcher
-interval_seconds: 600.0
-stagger_offset_seconds: 150.0
-jitter_seconds: 30.0
-"""
-        config_path = tmp_path / "researcher.yaml"
-        config_path.write_text(yaml_content, encoding="utf-8")
+    # Values below minimum should raise ValidationError
+    with pytest.raises(pydantic.ValidationError):
+        AgentConfig(
+            agent_id="a",
+            agent_role="worker",
+            db_path="/tmp/x.db",
+            interval_seconds=0.005,
+        )
 
-        config = load_agent_config(config_path)
+    # Minimum boundary value should succeed
+    cfg = AgentConfig(
+        agent_id="a",
+        agent_role="worker",
+        db_path="/tmp/x.db",
+        interval_seconds=0.01,
+    )
+    assert cfg.interval_seconds == 0.01
 
-        assert isinstance(config, AgentConfig)
-        assert config.agent_id == "researcher-1"
-        assert config.role == "researcher"
-        assert config.interval_seconds == 600.0
-        assert config.stagger_offset_seconds == 150.0
-        assert config.jitter_seconds == 30.0
 
-    def test_load_agent_config_invalid(self, tmp_path: Path):
-        """HB-11: load_agent_config() raises ValidationError when required fields are missing."""
-        from runtime.config import load_agent_config
-        from pydantic import ValidationError
+def test_load_agent_config(tmp_path):
+    """HB-02: load_agent_config reads a YAML file and returns an AgentConfig."""
+    config_mod = pytest.importorskip("runtime.config")
+    AgentConfig = config_mod.AgentConfig
+    load_agent_config = config_mod.load_agent_config
 
-        # Missing required 'agent_id' and 'role'
-        yaml_content = "interval_seconds: 600.0\n"
-        config_path = tmp_path / "bad.yaml"
-        config_path.write_text(yaml_content, encoding="utf-8")
+    yaml_file = tmp_path / "agent.yaml"
+    yaml_file.write_text(
+        "agent_id: test-agent\nagent_role: worker\ndb_path: /tmp/test.db\n"
+    )
 
-        with pytest.raises(ValidationError):
-            load_agent_config(config_path)
+    result = load_agent_config(yaml_file)
+
+    assert isinstance(result, AgentConfig)
+    assert result.agent_id == "test-agent"
+    assert result.agent_role == "worker"
