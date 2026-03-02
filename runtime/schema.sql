@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS task_reviews (
 
 -- agent_status: last known state for each agent in the cluster
 CREATE TABLE IF NOT EXISTS agent_status (
-    id             TEXT PRIMARY KEY,   -- agent_id
+    agent_id       TEXT PRIMARY KEY,   -- unique agent identifier
     agent_role     TEXT NOT NULL,      -- boss | researcher | writer | strategist | ...
     status         TEXT NOT NULL DEFAULT 'idle',   -- idle | working | error
     last_heartbeat TEXT,               -- ISO 8601; nullable until first heartbeat
