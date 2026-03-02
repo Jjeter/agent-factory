@@ -1,161 +1,161 @@
 # Phase 2: Agent Heartbeat Framework - Research
 
-**Researched:** 2026-02-28
-**Domain:** Python asyncio periodic tasks, SQLite WAL concurrency, typing.Protocol, local state persistence
+**Researched:** 2026-03-01
+**Domain:** Python asyncio heartbeat loops, Pydantic v2 config, atomic file I/O, SQLite WAL concurrency
 **Confidence:** HIGH
+
+---
+
+<user_constraints>
+## User Constraints (from CONTEXT.md)
+
+### Locked Decisions
+
+**Loop lifecycle**
+- `start()` is `async def` — returns a coroutine; caller does `await agent.start()` or `asyncio.create_task(agent.start())`
+- Production entrypoints use `asyncio.run(Agent(config).start())` — one line, no complexity added
+- Stagger offset delays the **first tick only** — then agent runs free on its own `interval ± jitter` cadence
+- Hook structure is **linear**: each tick runs `do_peer_reviews()` then `do_own_tasks()` in sequence, both `async def`, both overridable
+- Hook registry pattern deferred — can be added in Phase 3/4 as a refactor of `BaseAgent._tick()` without breaking subclasses
+- Shutdown uses **both signals**: `asyncio.Event` for graceful self-initiated stop; `CancelledError` for external/emergency cancellation
+
+**Error handling**
+- Unexpected exceptions in hooks: **log, set `agent_status.status = 'error'` in DB, continue next tick** — loop never dies from a single bad tick
+- Tiered handling: LLM billing/auth errors (`anthropic.APIStatusError` subclasses) → set stop event for graceful halt (retrying won't help); all other exceptions → log and continue
+- `agent_status.status` transitions: set to `'working'` at **tick start**, `'idle'` at **tick end** — boss can detect crashed agents by stale `working` state
+- `CancelledError` is **never caught** — cleanup runs in `try/finally`, then `CancelledError` re-raises
+
+**Local state file**
+- Location: `runtime/state/<agent-id>.json`
+- Fields: minimal — `{last_heartbeat, current_task_id}` only
+- Written at **end of tick**, after all DB writes complete — file reflects what actually finished
+- Writes are **atomic**: write to `.tmp` sibling file, then `Path.replace()` — Windows-safe, crash-safe
+- On startup, if file is missing or corrupt: **log a warning** and treat as fresh start — agent re-checks DB for current task
+
+**Integration test design**
+- Use **real SQLite in a tmp file** — the only way to surface `OperationalError: database is locked`
+- "No collision" assertion = **no exceptions raised** during concurrent runs (no timing assertions — fragile on CI)
+- Fast tests via **tiny `AgentConfig.interval_seconds`** (e.g., 0.05s) — consistent with `ge=0.01` constraint in existing spec
+- Each agent runs a **fixed tick count** (e.g., 3 ticks) then sets its stop event — deterministic, no sleep-based timeouts
+
+### Claude's Discretion
+- Exact jitter implementation (±30s random offset applied to `interval`)
+- `AgentConfig` field names and YAML key mapping
+- Exact log message format for warning on missing state file
+- How `current_task_id` is set in the state file (None when idle)
+
+### Deferred Ideas (OUT OF SCOPE)
+None — discussion stayed within phase scope.
+
+</user_constraints>
 
 ---
 
 ## Summary
 
-Phase 2 builds the generic heartbeat loop that all agents (boss and workers) run on. It is a pure Python asyncio engineering problem with no LLM calls — the goal is a robust `BaseAgent` class whose subclasses only need to override two hooks (`do_peer_reviews()`, `do_own_tasks()`). The heartbeat loop handles timing, stagger, jitter, local state persistence, DB status upsert, and graceful shutdown.
+Phase 2 implements a generic async heartbeat framework in pure Python, using only libraries already declared in `pyproject.toml`. The central class `BaseAgent` wraps an `asyncio.Event`-driven loop that staggered agents share safely via SQLite WAL. No new dependencies are required. The pattern is a well-established Python idiom: a `while not event.is_set()` loop with `asyncio.wait_for` on the sleep, wrapped in `try/finally` for cleanup and re-raising `CancelledError`.
 
-The existing Phase 1 foundation is solid: `Database` (aiosqlite, WAL, async context manager), immutable Pydantic v2 models, `AgentStatusRecord`, and full type coverage. Phase 2 layers on top without modifying Phase 1 code. The only new production dependencies are already in `pyproject.toml` — `pyyaml` for YAML config loading. No new packages are required.
+The three deliverables (`heartbeat.py`, `config.py`, `notifier.py`) integrate directly with Phase 1 artifacts: `DatabaseManager.open_write()` for DB access, `AgentStatus` + `AgentStatusEnum` for status tracking, `ActivityLog` for audit entries, and `_now_iso()` for timestamps. The deleted prior implementation failed because it imported non-existent class names (`Database`, `AgentRole`, `AgentState`, `AgentStatusRecord`). This research documents the exact correct names from the live codebase.
 
-The primary risk is SQLite write-lock collision when two agents run simultaneously. The stagger design (fixed offset + jitter) is the intended mitigation. The stagger ensures agents never write at the same time in normal operation; the 5-second `aiosqlite.connect(timeout=5.0)` already set in `Database.__init__` provides a safety net for coincidental overlap. Integration tests must verify that two agents with correct stagger never collide by monitoring for `OperationalError` (SQLITE_BUSY) during concurrent execution.
+The integration test design avoids fragile timing assertions by running each agent for a fixed tick count. Concurrent agents are launched with `asyncio.gather()`, which surfaces any `OperationalError: database is locked` as a test failure — the correct signal for a write-lock collision.
 
-**Primary recommendation:** Use the `while True` + `asyncio.sleep()` loop with `CancelledError` propagation for the heartbeat. Do NOT use a third-party scheduler. Keep `BaseAgent` as an abstract class (ABC) and `Notifier` as a `typing.Protocol`. Write local state atomically with write-to-temp + `Path.rename()`.
+**Primary recommendation:** Implement all three modules in one wave (`config.py` first, `notifier.py` second, `heartbeat.py` third), since `heartbeat.py` imports both others. Tests are written first per TDD workflow.
 
 ---
 
 ## Standard Stack
 
-### Core
-| Library | Version | Purpose | Why Standard |
-|---------|---------|---------|--------------|
-| `asyncio` | stdlib (3.12+) | Event loop, `sleep()`, `create_task()`, `TaskGroup` | Zero dependency; best fit for I/O-bound cooperative scheduling |
-| `abc` | stdlib | `ABC`, `abstractmethod` for `BaseAgent` hooks | Enforces subclass contract at import time |
-| `typing` | stdlib | `Protocol`, `runtime_checkable` for `Notifier` | Structural subtyping — `StdoutNotifier` needs no inheritance |
-| `aiosqlite` | >=0.20.0 | Already used in Phase 1 `Database` | No new dep; WAL timeout already set to 5s |
-| `pyyaml` | >=6.0.0 | Load `agents/*.yaml` config at agent startup | Already in `pyproject.toml`; use `yaml.safe_load()` only |
-| `pydantic` | >=2.0.0 | Config model for parsed YAML (AgentConfig dataclass) | Validates required fields; consistent with Phase 1 models |
-| `pathlib` | stdlib | State file paths, atomic rename pattern | Cleaner than `os.path` |
-| `json` | stdlib | Serialize/deserialize local state JSON | No extra dep; human-readable state files |
-| `random` | stdlib | `random.uniform(-30, 30)` for jitter | No dep needed |
+### Core (all already in pyproject.toml — zero new installs)
+
+| Library | Version (pinned in pyproject.toml) | Purpose | Why Standard |
+|---------|-------------------------------------|---------|--------------|
+| `asyncio` | Python 3.12 stdlib | Heartbeat loop, Event, gather, sleep, CancelledError | No dependency cost; asyncio.Event is the canonical graceful-stop primitive |
+| `pydantic` | `>=2.0.0` | `AgentConfig` model with Field constraints | Already used in models.py; `ge=0.01` constraint is Field-native |
+| `pyyaml` | `>=6.0.0` | Load `agents/*.yaml` config files | Already declared; standard YAML loader for Python |
+| `aiosqlite` | `>=0.20.0` | Async DB writes for `agent_status` + `activity_log` | Already used in DatabaseManager; WAL + busy_timeout already configured |
+| `pathlib.Path` | Python 3.12 stdlib | Atomic state file write via `.replace()` | Windows-safe atomic rename — documented in project memory |
+| `logging` | Python 3.12 stdlib | Structured agent log messages | No external dep; sufficient for Phase 2 no-op stubs |
+| `random` | Python 3.12 stdlib | Jitter offset (`random.uniform(-30, 30)`) | Stdlib; no need for numpy/etc. for simple uniform jitter |
 
 ### Supporting
+
 | Library | Version | Purpose | When to Use |
 |---------|---------|---------|-------------|
-| `tempfile` | stdlib | `NamedTemporaryFile` for atomic state writes | Write-then-rename crash safety |
-| `os` | stdlib | `os.fsync()` | Flush before atomic rename |
-| `datetime` | stdlib | ISO timestamps in state file and `AgentStatusRecord` | Consistent with Phase 1 |
-| `pytest-asyncio` | >=0.24.0 | Integration tests with `asyncio_mode = "auto"` | Already in `pyproject.toml` dev deps |
+| `typing.Protocol` | Python 3.12 stdlib | `Notifier` protocol definition | Structural subtyping — no ABC inheritance required |
+| `json` | Python 3.12 stdlib | Serialize/deserialize local state file | Simple dict in/out; no external serializer needed |
+| `tempfile` / `tmp_path` | pytest fixture | Integration test: real SQLite tmp file | `tmp_path` is a built-in pytest fixture returning a `pathlib.Path` |
 
 ### Alternatives Considered
+
 | Instead of | Could Use | Tradeoff |
 |------------|-----------|----------|
-| `asyncio.sleep()` while-loop | `apscheduler`, `aiocron`, `celery` | External schedulers add significant weight and complexity for a simple fixed-interval loop; asyncio sleep is idiomatic and testable |
-| `typing.Protocol` for Notifier | `abc.ABC` inheritance | Protocol is structurally typed — `StdoutNotifier` doesn't import from `notifier.py`, matches pluggable design requirement exactly |
-| `pydantic` for AgentConfig | `dataclasses` + manual validation | Pydantic v2 validates on construction, gives clear errors, matches Phase 1 pattern |
-| Atomic write via `tempfile` | Direct `Path.write_text()` | Direct write is not crash-safe; partial writes leave corrupt state files |
+| `asyncio.Event` for stop | `asyncio.CancelledError` only | Event allows agent-self-stop; CancelledError is external-only. CONTEXT.md requires both. |
+| `asyncio.sleep` with wait_for | `asyncio.wait_for(event.wait(), timeout=interval)` | The wait_for pattern lets the stop Event interrupt sleep cleanly — preferred. |
+| `random.uniform` for jitter | `secrets.SystemRandom` | `random.uniform` sufficient for timing jitter; secrets is for crypto, not scheduling. |
+| `logging` module | `structlog` | structlog adds dependency and complexity; stdlib logging is fine for Phase 2 stubs. |
+| `Path.replace()` for atomic write | `os.rename()` | `Path.replace()` is identical behavior but Pythonic — already called out in project memory. |
 
-**Installation:** No new packages needed — all are already in `pyproject.toml`.
+**Installation:** No new packages required. All dependencies already present.
 
 ---
 
 ## Architecture Patterns
 
 ### Recommended File Structure
+
 ```
 runtime/
-├── heartbeat.py        # BaseAgent ABC with async heartbeat loop
-├── notifier.py         # Notifier Protocol + StdoutNotifier
-├── config.py           # AgentConfig Pydantic model, load_agent_config()
-├── state/              # Local state files (runtime-generated, not committed)
+├── config.py          # AgentConfig Pydantic model + load_agent_config()
+├── notifier.py        # Notifier Protocol + StdoutNotifier
+├── heartbeat.py       # BaseAgent with async start() loop
+├── state/             # Created at runtime by BaseAgent (gitignored)
 │   └── <agent-id>.json
+tests/
+├── test_config.py     # Unit tests for AgentConfig + load_agent_config()
+├── test_notifier.py   # Unit tests for StdoutNotifier
+├── test_heartbeat.py  # Unit + integration tests for BaseAgent
 ```
 
-### Pattern 1: BaseAgent ABC with Hook Methods
+### Pattern 1: AgentConfig — Pydantic v2 Model with YAML Loading
 
-**What:** Abstract base class with a concrete `run()` coroutine that drives the heartbeat loop. Subclasses override only the domain-specific hooks.
-
-**When to use:** Whenever you need a "template method" pattern — shared loop mechanics, customizable work units.
-
-**Key design decisions for this project:**
-- `run()` is the top-level coroutine started via `asyncio.create_task()` or `asyncio.run()`
-- Loop sequence per heartbeat: stagger sleep (first cycle only) → jitter sleep → authenticate/upsert DB status → `do_peer_reviews()` → `do_own_tasks()` → log activity → save local state → interval sleep
-- Both hook methods are `async def` and return `None`; they receive no arguments (agent accesses `self.db`, `self.agent_id`, etc.)
-- `stop()` sets an internal `asyncio.Event` that causes the loop to exit cleanly
+**What:** A Pydantic BaseModel with Field constraints loaded from a YAML file via `yaml.safe_load`.
+**When to use:** Whenever agent configuration is read from `agents/<role>.yaml`.
 
 ```python
-# Source: Python docs asyncio-task + project requirements
-import asyncio
-import random
-from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+# runtime/config.py
+from pathlib import Path
+from pydantic import BaseModel, ConfigDict, Field
+import yaml
 
-class BaseAgent(ABC):
-    def __init__(
-        self,
-        agent_id: str,
-        db: Database,
-        config: AgentConfig,
-        notifier: Notifier,
-    ) -> None:
-        self.agent_id = agent_id
-        self.db = db
-        self.config = config
-        self.notifier = notifier
-        self._stop_event = asyncio.Event()
 
-    async def run(self) -> None:
-        """Main heartbeat loop. Call via asyncio.create_task() or asyncio.run()."""
-        # Stagger: wait for this agent's offset before first heartbeat
-        if self.config.stagger_offset_seconds > 0:
-            await asyncio.sleep(self.config.stagger_offset_seconds)
+class AgentConfig(BaseModel):
+    model_config = ConfigDict(use_enum_values=True)
 
-        while not self._stop_event.is_set():
-            try:
-                await self._heartbeat()
-            except asyncio.CancelledError:
-                raise  # Always propagate — do NOT suppress
-            except Exception as exc:
-                # Log error, update DB status to 'error', continue loop
-                await self._handle_error(exc)
+    agent_id: str
+    agent_role: str
+    db_path: str
+    interval_seconds: float = Field(default=600.0, ge=0.01)
+    stagger_offset_seconds: float = Field(default=0.0, ge=0.0)
 
-            # Interval sleep with jitter: ±30s random
-            jitter = random.uniform(-self.config.jitter_seconds, self.config.jitter_seconds)
-            sleep_seconds = max(0.0, self.config.interval_seconds + jitter)
-            try:
-                await asyncio.sleep(sleep_seconds)
-            except asyncio.CancelledError:
-                raise
 
-    async def _heartbeat(self) -> None:
-        """Single heartbeat cycle. Not intended to be overridden."""
-        await self._upsert_status("working")
-        await self.do_peer_reviews()
-        await self.do_own_tasks()
-        await self._log_activity()
-        await self._save_local_state()
-        await self._upsert_status("idle")
-
-    @abstractmethod
-    async def do_peer_reviews(self) -> None:
-        """Subclasses implement peer review logic here."""
-        ...
-
-    @abstractmethod
-    async def do_own_tasks(self) -> None:
-        """Subclasses implement own-task execution logic here."""
-        ...
-
-    def stop(self) -> None:
-        """Signal the heartbeat loop to exit after current cycle."""
-        self._stop_event.set()
+def load_agent_config(path: Path) -> AgentConfig:
+    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return AgentConfig.model_validate(raw)
 ```
 
-### Pattern 2: Notifier as typing.Protocol
+Note: `Field(ge=0.01)` is native Pydantic v2 syntax — verified via Context7.
+`model_validate(dict)` is the Pydantic v2 API (not v1's `parse_obj`).
 
-**What:** Structural protocol — any class with the right async methods satisfies the type, no inheritance required.
+### Pattern 2: Notifier Protocol
 
-**When to use:** Pluggable interfaces where implementations come from outside the module (future Discord/Slack notifiers from external packages).
+**What:** `typing.Protocol` for structural subtyping — no ABC or inheritance needed.
+**When to use:** `StdoutNotifier` is the Phase 2 implementation; Discord/Slack added later without changing the protocol.
 
 ```python
-# Source: Python typing docs - runtime_checkable Protocol
-from typing import Protocol, runtime_checkable
+# runtime/notifier.py
+from typing import Protocol
 
-@runtime_checkable
+
 class Notifier(Protocol):
     async def notify_review_ready(self, task_id: str, task_title: str) -> None: ...
     async def notify_escalation(self, task_id: str, reason: str) -> None: ...
@@ -163,157 +163,194 @@ class Notifier(Protocol):
 
 
 class StdoutNotifier:
-    """V1 implementation: prints to stdout. No import from notifier.py needed."""
-
     async def notify_review_ready(self, task_id: str, task_title: str) -> None:
-        print(f"[REVIEW READY] Task {task_id}: {task_title}")
+        print(f"[REVIEW READY] task={task_id} title={task_title!r}")
 
     async def notify_escalation(self, task_id: str, reason: str) -> None:
-        print(f"[ESCALATION] Task {task_id}: {reason}")
+        print(f"[ESCALATION] task={task_id} reason={reason!r}")
 
     async def notify_cluster_ready(self, cluster_name: str, path: str) -> None:
-        print(f"[CLUSTER READY] {cluster_name} at {path}")
+        print(f"[CLUSTER READY] name={cluster_name!r} path={path!r}")
 ```
 
-### Pattern 3: AgentConfig from YAML
+### Pattern 3: BaseAgent Heartbeat Loop
 
-**What:** Pydantic model validated on load from `agents/<role>.yaml`. Provides type-safe access to `interval_seconds`, `stagger_offset_seconds`, `role`, `agent_id`, `jitter_seconds`.
-
-**When to use:** Every agent startup — reads its own config YAML before constructing `BaseAgent`.
+**What:** `async def start()` runs stagger delay, then loops `_tick()` with jitter-adjusted sleep until stop event or CancelledError.
+**When to use:** All agent types (Boss, Worker) subclass BaseAgent and override `do_peer_reviews()` and `do_own_tasks()`.
 
 ```python
-# Source: pyyaml docs (safe_load) + pydantic v2 docs
-from pathlib import Path
-import yaml
-from pydantic import BaseModel, Field
-
-class AgentConfig(BaseModel):
-    agent_id: str
-    role: str
-    interval_seconds: float = Field(default=600.0, ge=1.0)       # ~10 min default
-    stagger_offset_seconds: float = Field(default=0.0, ge=0.0)
-    jitter_seconds: float = Field(default=30.0, ge=0.0)           # ±N seconds
-
-def load_agent_config(yaml_path: Path) -> AgentConfig:
-    data = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
-    return AgentConfig.model_validate(data)
-```
-
-### Pattern 4: Atomic Local State File Write
-
-**What:** Write-then-rename ensures state file is always either the old complete version or the new complete version — never a partial write.
-
-**When to use:** Every heartbeat cycle, after completing DB writes, to persist local state.
-
-```python
-# Source: iifx.dev atomic write pattern + Python tempfile docs
-import json
-import os
-import tempfile
-from pathlib import Path
-from datetime import datetime, timezone
-
-def _write_state_atomic(state_path: Path, state: dict) -> None:
-    """Write state dict to JSON atomically via write-then-rename."""
-    state_path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        delete=False,
-        dir=state_path.parent,
-        suffix=".tmp",
-    ) as tmp:
-        tmp_path = Path(tmp.name)
-        json.dump(state, tmp, indent=2, default=str)
-        tmp.flush()
-        os.fsync(tmp.fileno())
-
-    tmp_path.rename(state_path)   # atomic on POSIX and NTFS same-filesystem
-```
-
-State file schema (per `runtime/state/<agent-id>.json`):
-```json
-{
-  "agent_id": "researcher-1",
-  "last_heartbeat": "2026-02-28T10:00:00+00:00",
-  "current_task_id": "task-abc123",
-  "heartbeat_count": 42,
-  "status": "idle"
-}
-```
-
-### Pattern 5: Integration Test — Two Staggered Agents
-
-**What:** Run two `BaseAgent` stubs concurrently via `asyncio.gather()` for a bounded number of cycles, then assert no `OperationalError` was raised and state files exist.
-
-**When to use:** Phase 2 integration test requirement — "two agents run staggered heartbeats without DB collision."
-
-```python
-# Source: pytest-asyncio docs (asyncio_mode=auto already configured)
+# runtime/heartbeat.py  — illustrative skeleton
 import asyncio
-import pytest
-from runtime.heartbeat import BaseAgent
-from runtime.config import AgentConfig
-from runtime.notifier import StdoutNotifier
-from runtime.database import Database
+import json
+import logging
+import random
+from pathlib import Path
 
-class StubAgent(BaseAgent):
+from runtime.config import AgentConfig
+from runtime.database import DatabaseManager
+from runtime.models import AgentStatus, AgentStatusEnum, ActivityLog, _now_iso
+from runtime.notifier import Notifier, StdoutNotifier
+
+logger = logging.getLogger(__name__)
+
+STATE_DIR = Path(__file__).parent / "state"
+
+
+class BaseAgent:
+    def __init__(self, config: AgentConfig, notifier: Notifier | None = None) -> None:
+        self._config = config
+        self._notifier = notifier or StdoutNotifier()
+        self._db = DatabaseManager(Path(config.db_path))
+        self._stop_event = asyncio.Event()
+        self._state_path = STATE_DIR / f"{config.agent_id}.json"
+
+    async def start(self) -> None:
+        """Main entry point. Await this or wrap in asyncio.create_task()."""
+        # Stagger: delay first tick only
+        if self._config.stagger_offset_seconds > 0:
+            await asyncio.sleep(self._config.stagger_offset_seconds)
+
+        try:
+            while not self._stop_event.is_set():
+                await self._tick()
+                # Sleep interval ± jitter, interruptible by stop event
+                jitter = random.uniform(-30, 30)
+                sleep_secs = max(0.0, self._config.interval_seconds + jitter)
+                try:
+                    await asyncio.wait_for(
+                        self._stop_event.wait(),
+                        timeout=sleep_secs,
+                    )
+                except asyncio.TimeoutError:
+                    pass  # Normal: sleep elapsed, continue loop
+        finally:
+            await self._on_shutdown()
+
+    async def _tick(self) -> None:
+        """One heartbeat cycle. Sets status working → idle around hooks."""
+        await self._set_db_status(AgentStatusEnum.WORKING)
+        try:
+            await self.do_peer_reviews()
+            await self.do_own_tasks()
+            await self._set_db_status(AgentStatusEnum.IDLE)
+        except Exception as exc:
+            logger.exception("Unhandled error in tick for %s", self._config.agent_id)
+            await self._set_db_status(AgentStatusEnum.ERROR)
+            # If it's an LLM billing/auth error, halt gracefully
+            # (anthropic.APIStatusError check added in Phase 4 when LLM calls exist)
+        await self._write_state_file()
+
     async def do_peer_reviews(self) -> None:
-        pass   # no-op stub; no LLM calls in Phase 2
+        """Override in subclasses. No-op stub in Phase 2."""
 
     async def do_own_tasks(self) -> None:
-        pass
+        """Override in subclasses. No-op stub in Phase 2."""
 
-async def run_for_n_cycles(agent: BaseAgent, n: int) -> None:
-    """Run agent for exactly n heartbeat cycles then stop."""
-    cycles = 0
-    orig_heartbeat = agent._heartbeat.__func__
+    async def _set_db_status(self, status: AgentStatusEnum) -> None:
+        db = await self._db.open_write()
+        try:
+            await db.execute(
+                """INSERT INTO agent_status (id, agent_role, status, last_heartbeat)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET
+                       status=excluded.status,
+                       last_heartbeat=excluded.last_heartbeat""",
+                (self._config.agent_id, self._config.agent_role,
+                 status.value, _now_iso()),
+            )
+            await db.commit()
+        finally:
+            await db.close()
 
-    async def counted(self_inner):
-        nonlocal cycles
-        await orig_heartbeat(self_inner)
-        cycles += 1
-        if cycles >= n:
-            self_inner.stop()
+    async def _write_state_file(self) -> None:
+        """Atomic write to runtime/state/<agent-id>.json."""
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        state = {"last_heartbeat": _now_iso(), "current_task_id": None}
+        tmp = self._state_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(state), encoding="utf-8")
+        tmp.replace(self._state_path)
 
-    import types
-    agent._heartbeat = types.MethodType(counted, agent)
-    await agent.run()
+    async def _on_shutdown(self) -> None:
+        await self._set_db_status(AgentStatusEnum.IDLE)
+        logger.info("Agent %s shut down", self._config.agent_id)
+```
 
+**Key detail:** `asyncio.wait_for(self._stop_event.wait(), timeout=sleep_secs)` catches `asyncio.TimeoutError` (normal sleep completion). `CancelledError` from external cancellation is NOT caught — it propagates through `wait_for` and then through the `while` loop into the `try/finally` which calls `_on_shutdown()`.
+
+### Pattern 4: Atomic State File Write
+
+**What:** Write to `.tmp` then `Path.replace()` — crash-safe, Windows-safe.
+**When to use:** Every `_write_state_file()` call. Never write directly to the target path.
+
+```python
+# Correct atomic write pattern (Windows-safe)
+tmp = self._state_path.with_suffix(".tmp")
+tmp.write_text(json.dumps(state), encoding="utf-8")
+tmp.replace(self._state_path)  # NOT os.rename(), NOT Path.rename()
+```
+
+`Path.replace()` is the Windows-safe method per project memory. `Path.rename()` raises on Windows if destination exists.
+
+### Pattern 5: Integration Test — Two Staggered Agents, No Lock Collision
+
+**What:** `asyncio.gather()` two `BaseAgent.start()` coroutines using a real tmp SQLite file.
+**When to use:** The integration test for concurrent heartbeat safety.
+
+```python
+# tests/test_heartbeat.py — integration test sketch
+import asyncio
+import pytest
+from pathlib import Path
+from runtime.config import AgentConfig
+from runtime.database import DatabaseManager
+from runtime.heartbeat import BaseAgent
+
+
+class FixedTickAgent(BaseAgent):
+    """Subclass that stops after N ticks — deterministic, no timeouts."""
+
+    def __init__(self, config, ticks: int):
+        super().__init__(config)
+        self._remaining = ticks
+
+    async def _tick(self):
+        await super()._tick()
+        self._remaining -= 1
+        if self._remaining <= 0:
+            self._stop_event.set()
+
+
+@pytest.mark.asyncio
 async def test_two_agents_no_db_collision(tmp_path):
-    async with Database(tmp_path / "test.db") as db:
-        config_a = AgentConfig(
-            agent_id="agent-a", role="researcher",
-            interval_seconds=1.0, stagger_offset_seconds=0.0, jitter_seconds=0.0,
-        )
-        config_b = AgentConfig(
-            agent_id="agent-b", role="writer",
-            interval_seconds=1.0, stagger_offset_seconds=0.5, jitter_seconds=0.0,
-        )
-        notifier = StdoutNotifier()
-        agent_a = StubAgent("agent-a", db, config_a, notifier)
-        agent_b = StubAgent("agent-b", db, config_b, notifier)
+    db_file = tmp_path / "cluster.db"
+    mgr = DatabaseManager(db_file)
+    await mgr.up()
 
-        # Run both concurrently; any SQLITE_BUSY raises OperationalError
-        await asyncio.gather(
-            run_for_n_cycles(agent_a, 3),
-            run_for_n_cycles(agent_b, 3),
-        )
+    cfg1 = AgentConfig(
+        agent_id="agent-1", agent_role="worker",
+        db_path=str(db_file), interval_seconds=0.05, stagger_offset_seconds=0.0,
+    )
+    cfg2 = AgentConfig(
+        agent_id="agent-2", agent_role="worker",
+        db_path=str(db_file), interval_seconds=0.05, stagger_offset_seconds=0.025,
+    )
 
-        # Verify state files written
-        assert (tmp_path / "state" / "agent-a.json").exists()
-        assert (tmp_path / "state" / "agent-b.json").exists()
+    a1 = FixedTickAgent(cfg1, ticks=3)
+    a2 = FixedTickAgent(cfg2, ticks=3)
+
+    # gather raises if either raises — surfaces OperationalError: database is locked
+    await asyncio.gather(a1.start(), a2.start())
 ```
 
 ### Anti-Patterns to Avoid
 
-- **Suppressing `CancelledError`:** If you catch `CancelledError` during cleanup, you MUST re-raise it. Suppressing it breaks `asyncio.TaskGroup` and `asyncio.timeout()` structured concurrency. (Source: Python docs, HIGH confidence)
-- **`yaml.load()` without SafeLoader:** Always use `yaml.safe_load()`. The unsafe `yaml.load()` deserializes arbitrary Python objects from YAML tags — a critical security risk for agent YAML configs loaded from the filesystem. (Source: PyYAML docs, HIGH confidence)
-- **Direct `Path.write_text()` for state files:** Non-atomic. A crash mid-write leaves a corrupt JSON file; on restart the agent reads invalid state and errors. Use write-then-rename always.
-- **Application-level asyncio.Lock around DB calls:** Python-level locks have no effect across Docker container process boundaries. SQLite WAL + stagger design is the correct mechanism. Do not add per-agent asyncio locks.
-- **Blocking `time.sleep()` inside the async loop:** Blocks the entire event loop. Always use `await asyncio.sleep()`.
-- **Global `asyncio.get_event_loop()` (deprecated):** Use `asyncio.run()` as entrypoint and `asyncio.get_running_loop()` inside coroutines. (Source: Python docs, HIGH confidence)
-- **Applying stagger offset on every cycle:** Stagger is a one-time initial delay. Apply it once before the main `while` loop, not inside it.
+- **Catching `CancelledError`:** Never wrap the main loop body in `except asyncio.CancelledError`. Cleanup belongs in `finally`, not in `except`. The CONTEXT.md is explicit: `CancelledError` must always re-raise.
+- **`asyncio.sleep(interval)` as the sole sleep mechanism:** `asyncio.sleep` cannot be interrupted by a stop Event. Use `asyncio.wait_for(event.wait(), timeout=interval)` so graceful stop is immediate.
+- **Writing state file before DB commit:** The state file reflects what *actually finished*. Write it after `await db.commit()`, not before.
+- **`Path.rename()` on Windows:** Raises `FileExistsError` if destination exists. Always use `Path.replace()`.
+- **In-memory SQLite for collision test:** `:memory:` databases are per-connection — no WAL, no shared locking. The integration test MUST use a real file in `tmp_path`.
+- **Importing non-existent names:** The deleted implementation imported `Database`, `AgentRole`, `AgentState`, `AgentStatusRecord`. The correct names are `DatabaseManager`, `AgentStatusEnum`, `AgentStatus`. Never import names that don't exist in `runtime/models.py` or `runtime/database.py`.
+- **`asyncio.get_event_loop()`:** Deprecated in Python 3.10+. Use `asyncio.run()` at entrypoints; within async context, `asyncio.create_task()` is sufficient.
 
 ---
 
@@ -321,144 +358,181 @@ async def test_two_agents_no_db_collision(tmp_path):
 
 | Problem | Don't Build | Use Instead | Why |
 |---------|-------------|-------------|-----|
-| Async periodic scheduling | Custom cron-like scheduler | `asyncio.sleep()` while-loop | Third-party schedulers add config complexity, persistence, and failure modes not needed here |
-| Protocol checking | Manual duck-type `hasattr` checks | `typing.Protocol` + `@runtime_checkable` | Built-in, type-checker verified, `isinstance()` works at runtime |
-| YAML config validation | Manual `dict.get()` chains | `pydantic.BaseModel.model_validate()` | Field presence, type coercion, and error messages handled automatically |
-| Atomic file writes | `open().write()` then close | `tempfile.NamedTemporaryFile` + `Path.rename()` | OS-guaranteed atomicity; no partial-write risk |
-| SQLite concurrency control | Custom file locks, semaphores | WAL mode + stagger design + 5s timeout (already in `Database`) | WAL allows one writer; stagger eliminates contention; timeout is safety net |
+| Graceful stop primitive | Custom flag variable | `asyncio.Event` | Thread-safe, awaitable, integrates with `wait_for` |
+| Interruptible sleep | `asyncio.sleep` + polling | `asyncio.wait_for(event.wait(), timeout=N)` | Clean interrupt on stop without busy-loop |
+| YAML parsing | Custom file reader | `yaml.safe_load()` (pyyaml) | Already in pyproject.toml; handles all YAML edge cases |
+| Config validation | Manual type checks | Pydantic `Field(ge=0.01)` | Already in use project-wide; catches bad configs at load time |
+| Atomic file write | Non-atomic writes | `write_text` to `.tmp` then `Path.replace()` | Windows-safe, crash-safe — project memory documents this |
+| Structural typing | ABC + register | `typing.Protocol` | No inheritance needed; future implementations just match the interface |
 
-**Key insight:** The SQLite "concurrency problem" is already solved by design. Stagger prevents simultaneous writes. Do not add application-level locks around DB calls — they would only work within a single process, and agents run in separate Docker containers (or separate processes in tests).
+**Key insight:** Every problem in this phase has a stdlib or already-declared-dependency solution. Adding new libraries would be premature complexity.
 
 ---
 
 ## Common Pitfalls
 
-### Pitfall 1: CancelledError Swallowed During Cleanup
-**What goes wrong:** Agent catches `CancelledError` to do cleanup, but doesn't re-raise. The task never reports cancellation; `asyncio.TaskGroup` hangs waiting for it.
-**Why it happens:** `CancelledError` inherits from `BaseException`, not `Exception`. A bare `except Exception` won't catch it — but explicit `except asyncio.CancelledError` without re-raise will suppress it.
-**How to avoid:** Always `raise` in the `except asyncio.CancelledError` block after cleanup. Use `try/finally` for cleanup that must always run.
-**Warning signs:** Task appears to hang at shutdown; `task.cancelled()` returns `False` after `task.cancel()`.
+### Pitfall 1: CancelledError Swallowed by Broad Exception Handler
 
-### Pitfall 2: SQLite BUSY on First Heartbeat Overlap (Thundering Herd)
-**What goes wrong:** All agents start simultaneously (e.g., `docker compose up`), all attempt their first DB write at the same moment. WAL allows only one writer; others get `OperationalError: database is locked`.
-**Why it happens:** Without stagger, first-cycle DB writes are synchronized to container start time.
-**How to avoid:** Apply `stagger_offset_seconds` sleep BEFORE the first heartbeat (not inside the loop). The 5-second `timeout` in `aiosqlite.connect(timeout=5.0)` (Phase 1) means SQLite retries for 5 seconds before raising — covers coincidental overlaps in production. In tests, use very short intervals with proportionally short offsets and zero jitter.
-**Warning signs:** `aiosqlite.OperationalError: database is locked` in integration tests when stagger is missing or zero for all agents.
+**What goes wrong:** `except Exception` in `_tick()` catches `CancelledError` (which inherits from `BaseException` in Python 3.8+, NOT `Exception`) — actually, this is safe in Python 3.8+. But if someone writes `except BaseException`, CancelledError IS caught and must be explicitly re-raised.
 
-### Pitfall 3: Local State Directory Not Created
-**What goes wrong:** `runtime/state/` directory doesn't exist at startup. `NamedTemporaryFile(dir=...)` raises `FileNotFoundError`.
-**Why it happens:** State directory is runtime-generated, not committed to git.
-**How to avoid:** Call `state_path.parent.mkdir(parents=True, exist_ok=True)` inside `_write_state_atomic()` before every write. Or create it once in `BaseAgent.__init__`.
-**Warning signs:** `FileNotFoundError` on first heartbeat state save.
+**Why it happens:** Confusion about Python's exception hierarchy. `asyncio.CancelledError` inherits from `BaseException` (not `Exception`) since Python 3.8. `except Exception` does NOT catch it — this is the safe pattern.
 
-### Pitfall 4: Negative Sleep Duration from Jitter
-**What goes wrong:** `interval_seconds + jitter` goes negative when `interval_seconds` is small (e.g., 1s) and jitter draws -30s. `asyncio.sleep(negative)` raises `ValueError` in Python 3.13+.
-**Why it happens:** `random.uniform(-30, 30)` can exceed the interval in magnitude.
-**How to avoid:** `sleep_seconds = max(0.0, interval_seconds + jitter)`. In tests, set `jitter_seconds=0.0` in `AgentConfig` to eliminate non-determinism entirely.
-**Warning signs:** `ValueError: sleep length must be non-negative` in tests using short intervals.
+**How to avoid:** Use `except Exception` in `_tick()` (not `except BaseException`). The `CancelledError` propagates naturally. Cleanup lives in `try/finally`.
 
-### Pitfall 5: yaml.load() Without SafeLoader
-**What goes wrong:** Config loading uses `yaml.load()` without specifying a Loader, which enables deserialization of arbitrary Python objects embedded in YAML tags. An accidentally crafted or malicious YAML file in `agents/*.yaml` could trigger unintended object construction.
-**Why it happens:** `yaml.load()` without a Loader defaults to the full Loader in older PyYAML versions and emits a `YAMLLoadWarning` in newer ones.
-**How to avoid:** Always `yaml.safe_load()`. Never `yaml.load()` without `Loader=yaml.SafeLoader`.
-**Warning signs:** PyYAML emits a `YAMLLoadWarning` at runtime if `yaml.load()` is called without a Loader.
+**Warning signs:** If cancellation hangs or the agent doesn't respond to `task.cancel()`, check for `except BaseException` or `except:` (bare except).
 
-### Pitfall 6: Test Heartbeat Interval Too Long
-**What goes wrong:** Integration test uses production intervals (600s). Test hangs for 10 minutes or times out.
-**Why it happens:** No test-specific config override.
-**How to avoid:** `AgentConfig` exposes `interval_seconds`, `stagger_offset_seconds`, `jitter_seconds` as constructor parameters with defaults. Test fixtures inject fast configs: `interval_seconds=0.1`, `jitter_seconds=0.0`, `stagger_offset_seconds=0.0` (or `0.05` for the second agent).
-**Warning signs:** Test suite takes O(minutes) to complete; CI timeouts.
+### Pitfall 2: asyncio.wait_for Timeout Semantics Changed
+
+**What goes wrong:** In Python 3.11+, `asyncio.wait_for` cancels the inner coroutine and re-raises `asyncio.TimeoutError` (which is now a subclass of `TimeoutError` builtin). In earlier versions it raised `asyncio.TimeoutError` only.
+
+**Why it happens:** Python 3.11 made `asyncio.TimeoutError` an alias for the builtin `TimeoutError`.
+
+**How to avoid:** Catch `asyncio.TimeoutError` (works on all 3.12 — the only target version). The project requires Python 3.12+, so this is consistent.
+
+### Pitfall 3: aiosqlite Connection Left Open on Exception
+
+**What goes wrong:** If `db.execute()` raises and the `finally: await db.close()` is absent, the connection leaks. Under SQLite WAL with `busy_timeout=5000ms`, a leaked write connection eventually causes other agents to time out.
+
+**Why it happens:** The `DatabaseManager` is a connection factory — it does NOT manage connection lifecycle. The caller (BaseAgent) must always close.
+
+**How to avoid:** Always open connections in a `try/finally`:
+```python
+db = await self._db.open_write()
+try:
+    # ... use db ...
+finally:
+    await db.close()
+```
+
+Note: `aiosqlite.Connection` supports async context manager (`async with`) but `DatabaseManager.open_write()` returns the raw connection, not a context manager. Use `try/finally` to match the existing pattern in Phase 1.
+
+### Pitfall 4: State Directory Not Created Before First Write
+
+**What goes wrong:** `runtime/state/` does not exist on first run. `Path.write_text()` raises `FileNotFoundError`.
+
+**Why it happens:** The directory is created at runtime, not checked into git.
+
+**How to avoid:** `STATE_DIR.mkdir(parents=True, exist_ok=True)` before every write, or once in `__init__`.
+
+### Pitfall 5: Jitter Causes Negative Sleep Duration
+
+**What goes wrong:** If `interval_seconds` is small (e.g., 0.05s for tests) and jitter is ±30s, `interval + jitter` is always negative. `asyncio.sleep(-1)` raises `ValueError`.
+
+**Why it happens:** Jitter range (±30s) is specified for production (10-minute intervals). Test fixtures use tiny intervals.
+
+**How to avoid:** `sleep_secs = max(0.0, interval + jitter)`. Always clamp to zero.
+
+### Pitfall 6: pytest-asyncio Fixture Scope with asyncio_mode=auto
+
+**What goes wrong:** In `asyncio_mode=auto`, all async fixtures are automatically treated as asyncio fixtures. Mixing `scope="session"` async fixtures with function-scoped event loops causes `ScopeMismatch`.
+
+**Why it happens:** pytest-asyncio creates a new event loop per test function by default. Session-scoped async fixtures conflict.
+
+**How to avoid:** Keep all new test fixtures at function scope (default). The existing `db` fixture in `conftest.py` is already function-scoped — follow that pattern. The `tmp_path` fixture is also function-scoped.
+
+### Pitfall 7: INSERT vs UPSERT for agent_status
+
+**What goes wrong:** On first heartbeat, there is no row for the agent in `agent_status`. A plain `UPDATE` silently does nothing.
+
+**Why it happens:** `agent_status.id` is the PRIMARY KEY (agent_id). The agent must insert on first run and update on subsequent runs.
+
+**How to avoid:** Use `INSERT ... ON CONFLICT(id) DO UPDATE SET ...` (SQLite UPSERT syntax). This handles both first-run and subsequent ticks correctly.
 
 ---
 
 ## Code Examples
 
-Verified patterns from official sources and Phase 1 codebase:
+### AgentConfig with YAML Field Mapping
 
-### Graceful Cancellation in Periodic Loop
 ```python
-# Source: Python docs https://docs.python.org/3/library/asyncio-task.html
-async def run(self) -> None:
-    while not self._stop_event.is_set():
-        try:
-            await self._heartbeat()
-        except asyncio.CancelledError:
-            raise  # ALWAYS propagate
-        except Exception as exc:
-            await self._handle_error(exc)
+# Source: Pydantic v2 docs (Context7: /pydantic/pydantic)
+from pydantic import BaseModel, ConfigDict, Field
 
-        try:
-            await asyncio.sleep(self._sleep_duration())
-        except asyncio.CancelledError:
-            raise  # Also propagate here
+class AgentConfig(BaseModel):
+    model_config = ConfigDict(use_enum_values=True)
+
+    agent_id: str
+    agent_role: str
+    db_path: str
+    interval_seconds: float = Field(default=600.0, ge=0.01)
+    stagger_offset_seconds: float = Field(default=0.0, ge=0.0)
 ```
 
-### Upserting Agent Status (uses Phase 1 Database API)
-```python
-# Uses existing Database.upsert_agent_status() from runtime/database.py
-from runtime.models import AgentStatusRecord, AgentRole, AgentState
-from datetime import datetime, timezone
+Corresponding `agents/worker.yaml`:
+```yaml
+agent_id: worker-1
+agent_role: worker
+db_path: /data/cluster.db
+interval_seconds: 600
+stagger_offset_seconds: 150
+```
 
-async def _upsert_status(self, state: str) -> None:
-    record = AgentStatusRecord(
-        id=self.agent_id,
-        agent_role=AgentRole(self.config.role),
-        status=AgentState(state),
-        last_heartbeat=datetime.now(timezone.utc),
-        current_task=self._current_task_id,
+### Graceful Stop with asyncio.Event + wait_for
+
+```python
+# Interruptible sleep — stop event wakes the agent immediately
+try:
+    await asyncio.wait_for(
+        self._stop_event.wait(),
+        timeout=sleep_secs,
     )
-    await self.db.upsert_agent_status(record)
+except asyncio.TimeoutError:
+    pass  # Normal: sleep expired, continue loop
+# CancelledError propagates through wait_for naturally — do NOT catch it here
 ```
 
-### Reading Local State on Restart
+### UPSERT agent_status on Every Tick
+
 ```python
-# Allows agent to resume awareness of prior state after crash
-def _load_local_state(self) -> dict:
-    if self._state_path.exists():
-        try:
-            return json.loads(self._state_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            return {}   # corrupt/missing state — start fresh
-    return {}
+# SQLite UPSERT — handles first-run insert and subsequent updates
+await db.execute(
+    """INSERT INTO agent_status (id, agent_role, status, last_heartbeat)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(id) DO UPDATE SET
+           status=excluded.status,
+           last_heartbeat=excluded.last_heartbeat,
+           current_task=excluded.current_task""",
+    (agent_id, agent_role, status_value, _now_iso()),
+)
+await db.commit()
 ```
 
-### Two Concurrent Agents with asyncio.gather + timeout
+### Atomic State File Write
+
 ```python
-# Source: Python docs create_task + asyncio.timeout (Python 3.11+)
-async def test_staggered_agents_complete(tmp_path):
-    async with Database(tmp_path / "cluster.db") as db:
-        agent_a = StubAgent(...)
-        agent_b = StubAgent(...)
-        try:
-            async with asyncio.timeout(5.0):   # Python 3.11+
-                await asyncio.gather(
-                    run_for_n_cycles(agent_a, 3),
-                    run_for_n_cycles(agent_b, 3),
-                )
-        except TimeoutError:
-            pytest.fail("Agents did not complete within timeout")
+# Windows-safe atomic write — Path.replace() not Path.rename()
+import json
+STATE_DIR.mkdir(parents=True, exist_ok=True)
+state = {"last_heartbeat": _now_iso(), "current_task_id": None}
+tmp = state_path.with_suffix(".tmp")
+tmp.write_text(json.dumps(state), encoding="utf-8")
+tmp.replace(state_path)  # atomic on Windows and POSIX
 ```
 
-### Loading AgentConfig from YAML
-```python
-# Source: PyYAML docs (safe_load only)
-from pathlib import Path
-import yaml
-from runtime.config import AgentConfig
+### Startup State File Load (with Corruption Handling)
 
-def load_agent_config(yaml_path: Path) -> AgentConfig:
-    raw = yaml.safe_load(yaml_path.read_text(encoding="utf-8"))
-    return AgentConfig.model_validate(raw)
+```python
+def _load_state(self) -> dict:
+    try:
+        return json.loads(self._state_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError):
+        logger.warning(
+            "State file missing or corrupt for agent %s — treating as fresh start",
+            self._config.agent_id,
+        )
+        return {"last_heartbeat": None, "current_task_id": None}
 ```
 
-### Checking Notifier Protocol Compliance at Runtime
-```python
-# Source: Python typing docs - @runtime_checkable
-from runtime.notifier import Notifier, StdoutNotifier
+### ActivityLog Write After Tick
 
-def test_stdout_notifier_satisfies_protocol():
-    notifier = StdoutNotifier()
-    assert isinstance(notifier, Notifier)  # works because @runtime_checkable
+```python
+# Append to activity_log after each tick
+await db.execute(
+    "INSERT INTO activity_log (id, agent_id, action, details, created_at) "
+    "VALUES (?, ?, ?, ?, ?)",
+    (_uuid(), agent_id, "heartbeat", None, _now_iso()),
+)
+await db.commit()
 ```
 
 ---
@@ -467,112 +541,112 @@ def test_stdout_notifier_satisfies_protocol():
 
 | Old Approach | Current Approach | When Changed | Impact |
 |--------------|------------------|--------------|--------|
-| `@asyncio.coroutine` + `yield from` | `async def` + `await` | Python 3.5 / removed 3.11 | Use `async def` only; no migration needed |
-| `asyncio.get_event_loop()` as entry | `asyncio.run()` | Deprecated 3.10, recommended 3.7+ | Always use `asyncio.run()` as top-level entry |
-| `asyncio.gather()` for structured concurrency | `asyncio.TaskGroup` (Python 3.11+) | Python 3.11 | `TaskGroup` preferred for production; `gather()` still valid in test patterns |
-| `asyncio.timeout()` standalone | `asyncio.timeout()` as async context manager | Python 3.11 | Use `async with asyncio.timeout(N)` in tests |
-| `yaml.load()` without Loader | `yaml.safe_load()` | PyYAML 5.1 (2019) | Always `yaml.safe_load()` — `yaml.load()` emits warning without Loader |
+| `asyncio.CancelledError` inherits `Exception` | Inherits `BaseException` | Python 3.8 | `except Exception` no longer catches it — correct for Phase 2 |
+| `asyncio.TimeoutError` is custom class | Alias for builtin `TimeoutError` | Python 3.11 | `except asyncio.TimeoutError` still works in 3.12 |
+| Pydantic v1 `parse_obj()` | Pydantic v2 `model_validate()` | Pydantic 2.0 | All project code uses v2 — confirmed in models.py |
+| `asyncio.get_event_loop()` | Implicit event loop via `asyncio.run()` | Python 3.10 (deprecated) | Use `asyncio.run()` at entrypoints; no manual loop management |
 
 **Deprecated/outdated:**
-- `asyncio.get_event_loop()`: Deprecated as entry point in 3.10. Use `asyncio.get_running_loop()` inside coroutines only.
-- Generator-based coroutines (`yield from`): Removed in Python 3.11. Not relevant to this project.
-- `yaml.load()` without Loader: Emits `YAMLLoadWarning` since PyYAML 5.1. Never use without `Loader=yaml.SafeLoader`.
+- `pydantic.BaseModel.parse_obj()`: Removed in Pydantic v2. Use `model_validate()`.
+- `asyncio.get_event_loop()`: Deprecated since 3.10, emits warning in 3.12. Never use in new code.
+- `Path.rename()` on Windows: Raises `FileExistsError` if destination exists. Use `Path.replace()`.
 
 ---
 
 ## Open Questions
 
-1. **State file location: relative or configurable?**
-   - What we know: Spec says `runtime/state/<agent-id>.json`. In Docker, this is inside the container filesystem.
-   - What's unclear: Whether state dir path should be configurable (via `AgentConfig` or env var) or always relative to the `runtime/` package.
-   - Recommendation: Add `state_dir: Path = Path("runtime/state")` to `AgentConfig`. Test fixtures pass `tmp_path / "state"`. Production YAML omits it (uses default).
+1. **Activity log action type for heartbeat**
+   - What we know: `activity_log.action` is free-text (no enum constraint in schema). CONTEXT.md says "appends an entry after each tick (action type TBD by planner)."
+   - What's unclear: Should Phase 2 use `"heartbeat"` or leave the log write to Phase 3/4 when agents do real work?
+   - Recommendation: Write `"heartbeat"` entries in Phase 2. It keeps the audit trail continuous and the action string is not constrained by the schema.
 
-2. **Should `BaseAgent` own the `Database` instance or receive it?**
-   - What we know: Phase 2 spec shows agents share one DB file per cluster. In tests, using `async with Database(...) as db` and passing `db` into both agents is cleaner and matches Phase 1 patterns.
-   - Recommendation: Inject the `Database` instance (constructor injection). The entrypoint manages DB lifecycle. Do not open DB connections inside `BaseAgent`.
+2. **`current_task` field in agent_status UPSERT**
+   - What we know: Phase 2 agents are no-op stubs — they have no current task. The field should be `NULL`.
+   - What's unclear: Should the UPSERT always write `current_task=NULL` or omit the field entirely?
+   - Recommendation: Always write `current_task=NULL` in Phase 2 UPSERT to establish the pattern. Phase 4 Worker agents will update this field.
 
-3. **Should `do_peer_reviews()` and `do_own_tasks()` return anything?**
-   - What we know: Phase 2 stubs are no-ops. Phase 3/4 implementations will do real work.
-   - Recommendation: Return `None` in Phase 2. If Phase 3/4 needs structured results (e.g., task count for logging), add typed return then. Do not over-engineer the interface now.
-
-4. **Jitter in integration tests — configurable or disabled by convention?**
-   - Recommendation: Make jitter configurable via `AgentConfig.jitter_seconds: float = 30.0`. Set to `0.0` in test fixtures. Avoids non-deterministic test timing and `max(0.0, ...)` edge cases.
+3. **`runtime/state/` in .gitignore**
+   - What we know: State files are runtime-generated and agent-id-specific.
+   - What's unclear: Is `.gitignore` managed in this phase?
+   - Recommendation: Add `runtime/state/` to `.gitignore` as part of Phase 2 Wave 0 setup. The `.gitignore` file already exists (shown in git status as untracked `??`) — check if it needs this entry.
 
 ---
 
 ## Validation Architecture
 
-`workflow.nyquist_validation` is `true` in `.planning/config.json` — this section is required.
-
 ### Test Framework
+
 | Property | Value |
 |----------|-------|
 | Framework | pytest 8.0+ with pytest-asyncio 0.24+ |
-| Config file | `pyproject.toml` — `[tool.pytest.ini_options]` (`asyncio_mode = "auto"` already set) |
-| Quick run command | `pytest tests/test_heartbeat.py tests/test_notifier.py tests/test_config.py -x` |
+| Config file | `pyproject.toml` (`[tool.pytest.ini_options]`) |
+| Quick run command | `pytest tests/test_heartbeat.py tests/test_config.py tests/test_notifier.py -x` |
 | Full suite command | `pytest --cov=runtime --cov-report=term-missing --cov-fail-under=80` |
 
 ### Phase Requirements → Test Map
 
 | Req ID | Behavior | Test Type | Automated Command | File Exists? |
 |--------|----------|-----------|-------------------|-------------|
-| HB-01 | `BaseAgent` subclass can override `do_peer_reviews()` | unit | `pytest tests/test_heartbeat.py::test_subclass_overrides_hooks -x` | ❌ Wave 0 |
-| HB-02 | `BaseAgent` subclass can override `do_own_tasks()` | unit | `pytest tests/test_heartbeat.py::test_subclass_overrides_hooks -x` | ❌ Wave 0 |
-| HB-03 | Local state file updated after every heartbeat | unit | `pytest tests/test_heartbeat.py::test_state_file_written_per_cycle -x` | ❌ Wave 0 |
-| HB-04 | Heartbeat jitter applied to sleep duration | unit | `pytest tests/test_heartbeat.py::test_jitter_applied -x` | ❌ Wave 0 |
-| HB-05 | Stagger offset delays first heartbeat only | unit | `pytest tests/test_heartbeat.py::test_stagger_offset_first_cycle_only -x` | ❌ Wave 0 |
-| HB-06 | Two agents running simultaneously never hold write lock | integration | `pytest tests/test_heartbeat.py::test_two_agents_no_db_collision -x` | ❌ Wave 0 |
-| HB-07 | `Notifier` Protocol satisfied by `StdoutNotifier` at runtime | unit | `pytest tests/test_notifier.py::test_stdout_notifier_satisfies_protocol -x` | ❌ Wave 0 |
-| HB-08 | `StdoutNotifier.notify_review_ready()` prints correct output | unit | `pytest tests/test_notifier.py::test_stdout_notifier_review_ready -x` | ❌ Wave 0 |
-| HB-09 | `StdoutNotifier.notify_escalation()` prints correct output | unit | `pytest tests/test_notifier.py::test_stdout_notifier_escalation -x` | ❌ Wave 0 |
-| HB-10 | `AgentConfig` loads from valid YAML file | unit | `pytest tests/test_config.py::test_load_agent_config_valid -x` | ❌ Wave 0 |
-| HB-11 | `AgentConfig` raises on missing required fields | unit | `pytest tests/test_config.py::test_load_agent_config_invalid -x` | ❌ Wave 0 |
-| HB-12 | DB `agent_status` row upserted on each heartbeat | integration | `pytest tests/test_heartbeat.py::test_agent_status_upserted -x` | ❌ Wave 0 |
-| HB-13 | `BaseAgent.stop()` causes clean loop exit without exception | unit | `pytest tests/test_heartbeat.py::test_stop_exits_cleanly -x` | ❌ Wave 0 |
-| HB-14 | State file atomic write — rename-based, no partial writes | unit | `pytest tests/test_heartbeat.py::test_state_file_atomic_write -x` | ❌ Wave 0 |
+| HB-01 | `AgentConfig` validates `interval_seconds >= 0.01` | unit | `pytest tests/test_config.py::test_interval_ge_constraint -x` | ❌ Wave 0 |
+| HB-02 | `load_agent_config()` reads YAML and returns `AgentConfig` | unit | `pytest tests/test_config.py::test_load_agent_config -x` | ❌ Wave 0 |
+| HB-03 | `StdoutNotifier` implements `Notifier` protocol | unit | `pytest tests/test_notifier.py::test_stdout_notifier -x` | ❌ Wave 0 |
+| HB-04 | `BaseAgent.start()` runs stagger delay before first tick | unit | `pytest tests/test_heartbeat.py::test_stagger_delay -x` | ❌ Wave 0 |
+| HB-05 | `agent_status` row is UPSERTED on every tick | unit | `pytest tests/test_heartbeat.py::test_status_upsert -x` | ❌ Wave 0 |
+| HB-06 | `agent_status.status` is `working` during tick, `idle` after | unit | `pytest tests/test_heartbeat.py::test_status_transitions -x` | ❌ Wave 0 |
+| HB-07 | State file written atomically after every tick | unit | `pytest tests/test_heartbeat.py::test_state_file_written -x` | ❌ Wave 0 |
+| HB-08 | Missing/corrupt state file logs warning, uses fresh state | unit | `pytest tests/test_heartbeat.py::test_state_file_corrupt -x` | ❌ Wave 0 |
+| HB-09 | `CancelledError` is never caught — propagates through `start()` | unit | `pytest tests/test_heartbeat.py::test_cancelled_error_propagates -x` | ❌ Wave 0 |
+| HB-10 | Stop event terminates loop gracefully within one sleep interval | unit | `pytest tests/test_heartbeat.py::test_stop_event_graceful -x` | ❌ Wave 0 |
+| HB-11 | Two concurrent agents never raise `OperationalError: database is locked` | integration | `pytest tests/test_heartbeat.py::test_two_agents_no_db_collision -x` | ❌ Wave 0 |
+| HB-12 | `do_peer_reviews()` called before `do_own_tasks()` each tick | unit | `pytest tests/test_heartbeat.py::test_hook_order -x` | ❌ Wave 0 |
+| HB-13 | Jitter sleep is clamped to >= 0.0 (negative sleep prevented) | unit | `pytest tests/test_heartbeat.py::test_jitter_clamped -x` | ❌ Wave 0 |
 
 ### Sampling Rate
-- **Per task commit:** `pytest tests/test_heartbeat.py tests/test_notifier.py tests/test_config.py -x`
+
+- **Per task commit:** `pytest tests/test_config.py tests/test_notifier.py tests/test_heartbeat.py -x`
 - **Per wave merge:** `pytest --cov=runtime --cov-report=term-missing --cov-fail-under=80`
 - **Phase gate:** Full suite green before `/gsd:verify-work`
 
 ### Wave 0 Gaps
-- [ ] `tests/test_heartbeat.py` — covers HB-01 through HB-06, HB-12 through HB-14
-- [ ] `tests/test_notifier.py` — covers HB-07, HB-08, HB-09
-- [ ] `tests/test_config.py` — covers HB-10, HB-11
-- [ ] `tests/conftest.py` — shared fixtures: `tmp_db` (async Database in tmp_path), `fast_config` (interval=0.1s, jitter=0.0, stagger=0.0), `stub_agent`
 
-No framework install needed — pytest + pytest-asyncio already in `pyproject.toml` dev deps.
+- [ ] `tests/test_config.py` — covers HB-01, HB-02 (new file)
+- [ ] `tests/test_notifier.py` — covers HB-03 (new file)
+- [ ] `tests/test_heartbeat.py` — covers HB-04 through HB-13 (new file)
+- [ ] `runtime/state/` added to `.gitignore`
+- [ ] Framework already installed — no install step needed
 
 ---
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- Python stdlib docs (asyncio-task, 3.12+) — `asyncio.sleep()`, `CancelledError` semantics, `create_task()`, `TaskGroup`, `asyncio.timeout()`; fetched from `docs.python.org`
-- `https://sqlite.org/wal.html` — WAL mode concurrency: one writer at a time, SQLITE_BUSY behavior, caller-managed retry responsibility
-- `/python/typing` (Context7) — `Protocol`, `@runtime_checkable`, structural subtyping patterns
-- `/omnilib/aiosqlite` (Context7) — `aiosqlite.connect(timeout=...)`, `row_factory`, async context manager
-- `/pytest-dev/pytest-asyncio` (Context7) — `asyncio_mode = "auto"`, fixture patterns, async test structure
-- Phase 1 source code (`runtime/database.py`, `runtime/models.py`) — confirmed `Database` API surface, `AgentStatusRecord`, `upsert_agent_status()`
-- `pyproject.toml` — confirmed existing deps: `pyyaml>=6.0.0`, `pydantic>=2.0.0`, `pytest-asyncio>=0.24.0`
+
+- Context7 `/pydantic/pydantic` — `BaseModel`, `ConfigDict`, `Field(ge=...)`, `model_validate()` API verified
+- Context7 `/pytest-dev/pytest-asyncio` — `asyncio_mode="auto"`, fixture scope behavior, async fixture ownership verified
+- `C:/Projects/Agent Creation/runtime/models.py` — exact class names: `DatabaseManager`, `AgentStatus`, `AgentStatusEnum`, `_now_iso()`, `_uuid()` verified by direct file read
+- `C:/Projects/Agent Creation/runtime/database.py` — `open_write()`, `open_read()`, `init_schema()`, `up()`, `reset()` signatures verified by direct file read
+- `C:/Projects/Agent Creation/pyproject.toml` — dependency versions: pydantic>=2.0.0, aiosqlite>=0.20.0, pyyaml>=6.0.0 verified
+- `C:/Projects/Agent Creation/tests/conftest.py` — `tmp_path`-equivalent pattern (uses `Path(":memory:")`), function-scope fixture pattern verified
+- Python 3.12 stdlib documentation — `asyncio.Event`, `asyncio.wait_for`, `asyncio.CancelledError` (BaseException hierarchy), `Path.replace()`
 
 ### Secondary (MEDIUM confidence)
-- `https://pyyaml.org/wiki/PyYAMLDocumentation` — `yaml.safe_load()` API, file loading pattern, security warning for `yaml.load()` without SafeLoader
-- `https://iifx.dev/en/articles/460341744/...` — atomic write via `tempfile.NamedTemporaryFile` + `Path.rename()`; cross-verified against stdlib `pathlib` and `tempfile` docs
-- `https://www.johal.in/aiosqlite-wal-mode-python-trio-db-locks-8/` — WAL lock types (SHARED/RESERVED/PENDING/EXCLUSIVE); cross-verified with sqlite.org
+
+- Project MEMORY.md — `Path.replace()` preference over `Path.rename()` for Windows-safe atomic writes — confirmed in file read of CONTEXT.md (code_context section)
+- REQUIREMENTS.md Section 9 — jitter ±30s, busy_timeout 5000ms, Python 3.12+ requirement
 
 ### Tertiary (LOW confidence)
-- None — all critical claims verified against official sources.
+
+- None
 
 ---
 
 ## Metadata
 
 **Confidence breakdown:**
-- Standard stack: HIGH — all libraries already in `pyproject.toml`; APIs verified via Context7 and official docs
-- Architecture: HIGH — asyncio while-loop pattern is idiomatic Python; Protocol pattern verified; atomic write pattern verified against stdlib docs
-- Pitfalls: HIGH — CancelledError behavior from official Python docs; SQLITE_BUSY from sqlite.org; others from first-principles analysis of the stagger design
+- Standard stack: HIGH — all libraries verified in pyproject.toml and direct code reads
+- Architecture: HIGH — patterns derived from locked CONTEXT.md decisions and verified existing codebase patterns
+- Pitfalls: HIGH — CancelledError hierarchy and wait_for semantics verified against Python 3.12 stdlib; Windows Path behavior documented in project memory and CONTEXT.md
+- Integration test design: HIGH — verified against pytest-asyncio `asyncio_mode=auto` behavior via Context7
 
-**Research date:** 2026-02-28
-**Valid until:** 2026-03-30 (asyncio stdlib + SQLite WAL are extremely stable; PyYAML and aiosqlite APIs are stable; only pytest-asyncio may see minor releases)
+**Research date:** 2026-03-01
+**Valid until:** 2026-04-01 (stable stdlib + pydantic v2 — 30 days)
