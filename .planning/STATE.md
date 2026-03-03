@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-02T09:40:49.619Z"
+last_updated: "2026-03-03T00:46:12Z"
 progress:
-  total_phases: 2
+  total_phases: 7
   completed_phases: 2
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 9
+  completed_plans: 9
 ---
 
 # Agent Factory — State
@@ -20,9 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** A working factory cluster that generates self-contained AI agent cluster artifacts
-**Current focus:** Phase 2 — Agent Heartbeat Framework
+**Current focus:** Phase 3 — Boss Agent
 
 ## Session Log
+
+### 2026-03-03 — Plan 03-00 executed (TDD RED — 19 BossAgent stubs + 7 CLI stubs)
+- Stopped at: Completed 03-00-PLAN.md
+- Last commit: 9d1cf77 test(03-00): add 7 Boss CLI integration test stubs (TDD RED)
+- Key decisions: pytest.importorskip inside test body for boss stubs (boss.py absent — module-level crash); reviewer_roles as nullable TEXT on tasks (JSON list, no join table); 19 stubs created (plan stated 18 but template listed 19 — template authoritative)
 
 ### 2026-03-02 — Plan 02-02 executed (BaseAgent heartbeat loop implementation)
 - Stopped at: Completed 02-02-PLAN.md
@@ -66,10 +71,10 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-- Phase 2 of 7: Agent Heartbeat Framework — COMPLETE
-- Current Plan: 03 of 03 complete (all waves: stubs + config/notifier + BaseAgent)
-- Status: Plan 02-02 complete (BaseAgent heartbeat loop, 10/10 tests GREEN, 97% coverage); Phase 2 DONE
-- Next: Phase 3 — Boss Agent (goal decomposition, task creation, peer review promotion)
+- Phase 3 of 7: Boss Agent — IN PROGRESS
+- Current Plan: 00 of 04 complete (TDD RED stubs done; Waves 1-3 remaining)
+- Status: Plan 03-00 complete (19 BossAgent + 7 CLI stubs, reviewer_roles schema, tabulate dep); Wave 1 next
+- Next: Phase 3 Plan 01 — BossAgent core implementation (Wave 1)
 
 ## Blockers / Concerns
 
@@ -100,3 +105,6 @@ None.
 | agent_status schema uses agent_id (not id) as PRIMARY KEY | test queries use WHERE agent_id = ? — column name must match | — Done (02-02): schema.sql updated |
 | BaseAgent._write_state_file() references module-level STATE_DIR | monkeypatch.setattr(heartbeat_mod, "STATE_DIR", ...) redirects state files in tests | — Done (02-02) |
 | Error in tick body sets status=ERROR, loop continues (stop_event NOT set) | Transient errors should not kill agent; subclass can override _tick() for custom behavior | — Done (02-02) |
+| pytest.importorskip inside test body for boss stubs (not module level) | boss.py absent until Wave 1 — module-level import crashes collection | — Done (03-00) |
+| reviewer_roles as nullable TEXT column on tasks (JSON list) | Avoids join table complexity for V1; boss writes JSON string at task creation time | — Done (03-00): schema.sql updated |
+| tabulate>=0.9.0 added to project dependencies | Required for human-readable table output in cluster CLI commands (Wave 3) | — Done (03-00): pyproject.toml updated |
