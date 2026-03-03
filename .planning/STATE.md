@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-03T00:57:00Z"
+last_updated: "2026-03-03T01:05:05Z"
 progress:
   total_phases: 7
   completed_phases: 2
@@ -23,6 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 **Current focus:** Phase 3 — Boss Agent
 
 ## Session Log
+
+### 2026-03-03 — Plan 03-02 executed (BossAgent Wave 2 — stuck detection + gap-fill)
+- Stopped at: Completed 03-02-PLAN.md
+- Last commit: 8e0b368 feat(03-02): implement gap-fill cron tests and confirm full BossAgent GREEN
+- Key decisions: gap-fill implementation bundled in Task 1 feat commit; timezone-naive fix via replace(tzinfo=timezone.utc); TIER_ESCALATION dict prevents KeyError on opus; all 19 test_boss.py tests GREEN; 93.80% coverage
 
 ### 2026-03-03 — Plan 03-01 executed (BossAgent core — Wave 1)
 - Stopped at: Completed 03-01-PLAN.md
@@ -77,9 +82,9 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 ## Current Position
 
 - Phase 3 of 7: Boss Agent — IN PROGRESS
-- Current Plan: 01 of 04 complete (TDD RED + Wave 1 done; Waves 2-3 remaining)
-- Status: Plan 03-01 complete (BossAgent core: peer review promotion, goal decomposition, 10 GREEN, 97% coverage); Wave 2 next
-- Next: Phase 3 Plan 02 — BossAgent Wave 2 (stuck detection + gap-fill)
+- Current Plan: 02 of 04 complete (TDD RED + Wave 1 + Wave 2 done; Wave 3 remaining)
+- Status: Plan 03-02 complete (BossAgent Wave 2: stuck detection, escalation, gap-fill, goal completion, 19 GREEN, 93.80% coverage); Wave 3 next
+- Next: Phase 3 Plan 03 — BossAgent Wave 3 (Boss CLI integration)
 
 ## Blockers / Concerns
 
@@ -115,3 +120,7 @@ None.
 | tabulate>=0.9.0 added to project dependencies | Required for human-readable table output in cluster CLI commands (Wave 3) | — Done (03-00): pyproject.toml updated |
 | All Wave 1 tests written in single RED commit (both Task 1 + Task 2 test groups) | Shared helpers (_make_db, _insert_*) benefit all groups; plan noted no boss.py changes for Task 2 | — Done (03-01) |
 | patch.object(boss._llm.messages, 'parse') worked directly for mock | No class-level AsyncAnthropic patch needed; simpler test setup | — Done (03-01) |
+| TIER_ESCALATION dict maps opus→opus (no error on already-max tier) | Prevents KeyError; no-op on already-escalated tasks when repeated escalation runs | — Done (03-02) |
+| Second intervention check: row['stuck_since'] is not None | First intervention sets stuck_since; second intervention checks it to avoid double-escalation | — Done (03-02) |
+| timezone-naive datetime fix: replace(tzinfo=timezone.utc) after fromisoformat() | SQLite datetime('now') returns naive timestamps; UTC-aware comparison required for stuck detection | — Done (03-02) |
+| Gap-fill: only trigger decompose_goal() when cnt==0 active tasks | Prevents task explosion; gap-fill is only for when no work is in flight | — Done (03-02) |
