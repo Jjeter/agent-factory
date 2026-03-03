@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pydantic
@@ -29,6 +30,10 @@ logger = logging.getLogger(__name__)
 
 # Model used for all boss LLM calls (per CONTEXT.md: boss always uses Sonnet)
 _BOSS_MODEL = "claude-sonnet-4-6"
+
+# Stuck detection constants
+STUCK_THRESHOLD = timedelta(minutes=30)
+TIER_ESCALATION: dict[str, str] = {"haiku": "sonnet", "sonnet": "opus", "opus": "opus"}
 
 
 # ---------------------------------------------------------------------------
@@ -99,9 +104,247 @@ class BossAgent(BaseAgent):
             # "pending" → do nothing
 
     async def do_own_tasks(self) -> None:
-        """Stuck detection (every tick) + gap-fill (every 3 ticks). Wave 2."""
+        """Stuck detection (every tick) + gap-fill (every 3 ticks)."""
         self._heartbeat_counter += 1
-        # Wave 2 will implement _detect_stuck_tasks() and _gap_fill_and_completion_check()
+        await self._detect_stuck_tasks()
+        if self._heartbeat_counter % 3 == 0:
+            await self._gap_fill_and_completion_check()
+
+    # ── Stuck detection helpers ────────────────────────────────────────────
+
+    async def _detect_stuck_tasks(self) -> None:
+        """Check all in-progress tasks; escalate if stuck > 30 min."""
+        now = datetime.now(timezone.utc)
+        db = await self._db.open_read()
+        try:
+            async with db.execute(
+                "SELECT id, title, description, model_tier, escalation_count, "
+                "stuck_since, updated_at "
+                "FROM tasks WHERE status = 'in-progress'"
+            ) as cur:
+                rows = await cur.fetchall()
+        finally:
+            await db.close()
+
+        for row in rows:
+            # Use stuck_since if already set, otherwise updated_at as baseline
+            baseline_str = row["stuck_since"] or row["updated_at"]
+            baseline = datetime.fromisoformat(baseline_str)
+            if baseline.tzinfo is None:
+                baseline = baseline.replace(tzinfo=timezone.utc)
+            if now - baseline < STUCK_THRESHOLD:
+                continue  # Not stuck yet
+
+            if row["stuck_since"] is not None:
+                # Second intervention: post unblocking hint via LLM
+                await self._post_unblocking_hint(
+                    row["id"], row["title"], row["description"]
+                )
+            else:
+                # First intervention: escalate model tier, set stuck_since
+                old_tier = row["model_tier"]
+                new_tier = TIER_ESCALATION.get(old_tier, "opus")
+                await self._escalate_task(row["id"], old_tier, new_tier, baseline_str)
+
+    async def _escalate_task(
+        self, task_id: str, old_tier: str, new_tier: str, stuck_since: str
+    ) -> None:
+        """Escalate model_tier, set stuck_since, increment escalation_count, log."""
+        now = _now_iso()
+        db = await self._db.open_write()
+        try:
+            await db.execute(
+                "UPDATE tasks SET model_tier = ?, escalation_count = escalation_count + 1, "
+                "stuck_since = ?, updated_at = ? WHERE id = ?",
+                (new_tier, stuck_since, now, task_id),
+            )
+            await db.execute(
+                "INSERT INTO activity_log (id, agent_id, task_id, action, details, created_at) "
+                "VALUES (?, ?, ?, 'task_escalated', ?, ?)",
+                (
+                    _uuid(),
+                    self._config.agent_id,
+                    task_id,
+                    json.dumps(
+                        {"old_tier": old_tier, "new_tier": new_tier, "stuck_since": stuck_since}
+                    ),
+                    now,
+                ),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+        logger.info(
+            "Boss escalated task %s: %s -> %s (stuck since %s)",
+            task_id,
+            old_tier,
+            new_tier,
+            stuck_since,
+        )
+
+    async def _post_unblocking_hint(
+        self, task_id: str, title: str, description: str
+    ) -> None:
+        """Call LLM to generate an unblocking hint; post as task_comment."""
+        try:
+            parsed = await self._llm.messages.parse(
+                model=_BOSS_MODEL,
+                max_tokens=512,
+                system=(
+                    "You are a boss agent. A task is stuck. Provide a single concrete, "
+                    "actionable hint to unblock the assigned worker. Be specific."
+                ),
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Task title: {title}\n"
+                            f"Description: {description}\n"
+                            "What should the worker try next?"
+                        ),
+                    }
+                ],
+                output_format=UnblockingHint,
+            )
+            hint = parsed.parsed_output.hint
+        except Exception:
+            logger.exception("LLM unblocking hint failed for task %s", task_id)
+            hint = (
+                "Boss investigation: task appears stuck. "
+                "Review task requirements and try a smaller sub-step."
+            )
+
+        now = _now_iso()
+        db = await self._db.open_write()
+        try:
+            await db.execute(
+                "INSERT INTO task_comments (id, task_id, agent_id, comment_type, content, created_at) "
+                "VALUES (?, ?, ?, 'progress', ?, ?)",
+                (_uuid(), task_id, self._config.agent_id, f"[Boss unblocking hint] {hint}", now),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+        logger.info("Boss posted unblocking hint for task %s", task_id)
+
+    # ── Gap-fill and completion check ──────────────────────────────────────
+
+    async def _gap_fill_and_completion_check(self) -> None:
+        """Every 3 heartbeats: check goal completion; if incomplete, create gap tasks.
+
+        Goal completion check:
+        1. Fetch active goal and all completed (approved) tasks
+        2. LLM judgment: is the goal fully achieved?
+        3. If yes: set goal.status='completed', stop
+        4. If no: generate additional tasks to fill gaps (same decompose pattern)
+        """
+        # Fetch active goal
+        db = await self._db.open_read()
+        try:
+            async with db.execute(
+                "SELECT id, title, description FROM goals WHERE status = 'active' LIMIT 1"
+            ) as cur:
+                goal_row = await cur.fetchone()
+        finally:
+            await db.close()
+
+        if goal_row is None:
+            return  # No active goal; nothing to do
+
+        goal_id = goal_row["id"]
+
+        # Fetch approved task summaries
+        db = await self._db.open_read()
+        try:
+            async with db.execute(
+                "SELECT title, description FROM tasks WHERE goal_id = ? AND status = 'approved'",
+                (goal_id,),
+            ) as cur:
+                approved_rows = await cur.fetchall()
+        finally:
+            await db.close()
+
+        completed_summaries = [
+            f"{r['title']}: {r['description'][:100]}" for r in approved_rows
+        ]
+
+        # LLM judgment: is goal complete?
+        is_complete = await self._check_goal_completion(
+            goal_row["description"], completed_summaries
+        )
+
+        if is_complete:
+            await self._mark_goal_complete(goal_id)
+            logger.info("Boss: goal %s marked as completed", goal_id)
+        else:
+            # Gap fill: generate additional tasks only if no active work remains
+            db = await self._db.open_read()
+            try:
+                async with db.execute(
+                    "SELECT COUNT(*) as cnt FROM tasks WHERE goal_id = ? "
+                    "AND status IN ('todo', 'in-progress', 'peer_review', 'review')",
+                    (goal_id,),
+                ) as cur:
+                    row = await cur.fetchone()
+            finally:
+                await db.close()
+            if row["cnt"] == 0:
+                logger.info("Boss: gap fill for goal %s — generating new tasks", goal_id)
+                await self.decompose_goal(goal_id, goal_row["description"])
+
+    async def _check_goal_completion(
+        self, goal_desc: str, completed_summaries: list[str]
+    ) -> bool:
+        """LLM call: is goal fully achieved by the completed tasks?"""
+        if not completed_summaries:
+            return False  # No completed work — cannot be done
+        summary_text = "\n".join(f"- {s}" for s in completed_summaries)
+        try:
+            parsed = await self._llm.messages.parse(
+                model=_BOSS_MODEL,
+                max_tokens=512,
+                system=(
+                    "You are evaluating whether a goal has been fully achieved. "
+                    "Answer strictly with the structured format."
+                ),
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Goal: {goal_desc}\n\n"
+                            f"Completed tasks:\n{summary_text}\n\n"
+                            "Is this goal fully achieved by these completed tasks?"
+                        ),
+                    }
+                ],
+                output_format=GoalCompletionResult,
+            )
+            return parsed.parsed_output.is_complete
+        except Exception:
+            logger.exception("LLM goal completion check failed")
+            return False  # Fail safe: treat as incomplete
+
+    async def _mark_goal_complete(self, goal_id: str) -> None:
+        """Set goal.status = 'completed' in DB."""
+        db = await self._db.open_write()
+        try:
+            await db.execute(
+                "UPDATE goals SET status = 'completed' WHERE id = ?",
+                (goal_id,),
+            )
+            await db.execute(
+                "INSERT INTO activity_log (id, agent_id, action, details, created_at) "
+                "VALUES (?, ?, 'goal_completed', ?, ?)",
+                (
+                    _uuid(),
+                    self._config.agent_id,
+                    json.dumps({"goal_id": goal_id}),
+                    _now_iso(),
+                ),
+            )
+            await db.commit()
+        finally:
+            await db.close()
 
     # ── Peer review helpers ────────────────────────────────────────────────
 
