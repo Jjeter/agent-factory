@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
-status: unknown
-last_updated: "2026-03-03T01:05:05Z"
+status: in_progress
+last_updated: "2026-03-03T02:00:00Z"
 progress:
   total_phases: 7
-  completed_phases: 2
-  total_plans: 10
-  completed_plans: 10
+  completed_phases: 3
+  total_plans: 14
+  completed_plans: 14
 ---
 
 # Agent Factory — State
@@ -20,9 +20,19 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** A working factory cluster that generates self-contained AI agent cluster artifacts
-**Current focus:** Phase 3 — Boss Agent
+**Current focus:** Phase 4 — Worker Agents
 
 ## Session Log
+
+### 2026-03-03 — Phase 3 executed (BossAgent — all 4 plans complete)
+- Stopped at: Completed 03-04-PLAN.md
+- Last commit: c92efef test(03-04): add 10 coverage gap tests — boss.py from 89% to 98%
+- Key decisions: BossAgent subclasses BaseAgent overriding do_peer_reviews/do_own_tasks; reviewer_roles stored as JSON TEXT on tasks table; tabulate used for CLI table output; AsyncAnthropic.messages.parse() for structured LLM output; cluster goal set archives old active goal before inserting new; INSERT OR REPLACE handles task_reviews UNIQUE constraint on rejection path
+
+### 2026-03-03 — Plan 03-03 executed (BossAgent Wave 3 — CLI commands)
+- Stopped at: Completed 03-03-PLAN.md
+- Last commit: cdcfeb6 docs(03): capture phase context
+- Key decisions: goal set command archives previous active goal; tasks list supports --status filter and --json flag; approve command validates peer_review state before approval; tabulate used for human-readable table output
 
 ### 2026-03-03 — Plan 03-02 executed (BossAgent Wave 2 — stuck detection + gap-fill)
 - Stopped at: Completed 03-02-PLAN.md
@@ -81,10 +91,10 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-- Phase 3 of 7: Boss Agent — IN PROGRESS
-- Current Plan: 02 of 04 complete (TDD RED + Wave 1 + Wave 2 done; Wave 3 remaining)
-- Status: Plan 03-02 complete (BossAgent Wave 2: stuck detection, escalation, gap-fill, goal completion, 19 GREEN, 93.80% coverage); Wave 3 next
-- Next: Phase 3 Plan 03 — BossAgent Wave 3 (Boss CLI integration)
+- Phase 3 of 7: Boss Agent — COMPLETE
+- Current Plan: 04 of 04 complete (all waves: stubs + BossAgent core + stuck detection/escalation + CLI commands)
+- Status: Plan 03-04 complete (29 boss tests GREEN, 89 total tests, 98.43% coverage); Phase 3 DONE
+- Next: Phase 4 — Worker Agents (task execution, peer review execution, role-based system prompts)
 
 ## Blockers / Concerns
 
@@ -120,7 +130,9 @@ None.
 | tabulate>=0.9.0 added to project dependencies | Required for human-readable table output in cluster CLI commands (Wave 3) | — Done (03-00): pyproject.toml updated |
 | All Wave 1 tests written in single RED commit (both Task 1 + Task 2 test groups) | Shared helpers (_make_db, _insert_*) benefit all groups; plan noted no boss.py changes for Task 2 | — Done (03-01) |
 | patch.object(boss._llm.messages, 'parse') worked directly for mock | No class-level AsyncAnthropic patch needed; simpler test setup | — Done (03-01) |
-| TIER_ESCALATION dict maps opus→opus (no error on already-max tier) | Prevents KeyError; no-op on already-escalated tasks when repeated escalation runs | — Done (03-02) |
+| TIER_ESCALATION dict maps opus->opus (no error on already-max tier) | Prevents KeyError; no-op on already-escalated tasks when repeated escalation runs | — Done (03-02) |
 | Second intervention check: row['stuck_since'] is not None | First intervention sets stuck_since; second intervention checks it to avoid double-escalation | — Done (03-02) |
 | timezone-naive datetime fix: replace(tzinfo=timezone.utc) after fromisoformat() | SQLite datetime('now') returns naive timestamps; UTC-aware comparison required for stuck detection | — Done (03-02) |
 | Gap-fill: only trigger decompose_goal() when cnt==0 active tasks | Prevents task explosion; gap-fill is only for when no work is in flight | — Done (03-02) |
+| goal set command archives old active goal before inserting new | Prevents orphaned goals; ensures single active goal at all times | — Done (03-03) |
+| INSERT OR REPLACE handles task_reviews UNIQUE constraint on rejection path | Avoids IntegrityError when boss re-creates review rows after rejection resets | — Done (03-03) |

@@ -90,6 +90,15 @@ Plans:
 - Boss logs all escalations with reason to `activity_log`
 - Stuck detection fires within 2 heartbeat cycles after threshold
 
+**Status: COMPLETE** — 4/4 plans executed, 29 GREEN boss tests, 98.43% coverage
+
+Plans:
+- [x] 03-00-PLAN.md — TDD RED stubs: 19 boss tests + 7 CLI stubs; schema + tabulate
+- [x] 03-01-PLAN.md — BossAgent core: peer review promotion + goal decomposition (10 GREEN)
+- [x] 03-02-PLAN.md — Stuck detection + escalation + gap-fill cron (19 GREEN)
+- [x] 03-03-PLAN.md — CLI commands: goal set, tasks list, agents status, approve (26 GREEN)
+- [x] 03-04-PLAN.md — Coverage gate + documentation finalization (29 GREEN, 98.43% coverage)
+
 ---
 
 ## Phase 4: Worker Agents
