@@ -705,3 +705,224 @@ async def test_re_review_upsert_on_rejection(tmp_path):
     finally:
         await db.close()
     assert row["status"] == "pending"
+
+
+# ── Coverage gap tests (Task 1: 03-04-PLAN.md) ───────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_stuck_task_opus_stays_opus(tmp_path):
+    """opus model_tier stays opus (TIER_ESCALATION maps opus→opus, no KeyError)."""
+    mgr = await _make_db(tmp_path)
+    goal_id = _uuid()
+    task_id = _uuid()
+    await _insert_goal(mgr, goal_id)
+
+    db = await mgr.open_write()
+    try:
+        old_ts = _minutes_ago(35)
+        await db.execute(
+            "INSERT INTO tasks (id, goal_id, title, description, status, priority, "
+            "model_tier, escalation_count, reviewer_roles, created_at, updated_at) "
+            "VALUES (?, ?, 'Stuck opus task', 'Description', 'in-progress', 50, "
+            "'opus', 2, '[]', ?, ?)",
+            (task_id, goal_id, old_ts, old_ts),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    boss = _make_boss(mgr)
+    await boss.do_own_tasks()
+
+    db = await mgr.open_read()
+    try:
+        async with db.execute(
+            "SELECT model_tier, escalation_count FROM tasks WHERE id = ?", (task_id,)
+        ) as cur:
+            row = await cur.fetchone()
+    finally:
+        await db.close()
+    assert row["model_tier"] == "opus"
+    assert row["escalation_count"] == 3
+
+
+@pytest.mark.asyncio
+async def test_resolve_reviewer_agents_skips_missing_role(tmp_path):
+    """_resolve_reviewer_agents logs warning and skips roles not in agent_status."""
+    mgr = await _make_db(tmp_path)
+
+    db = await mgr.open_write()
+    try:
+        await db.execute(
+            "INSERT INTO agent_status (agent_id, agent_role, status) VALUES (?, ?, 'idle')",
+            ("a-1", "researcher"),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    boss = _make_boss(mgr)
+    # "missing-role" is not in agent_status — should be skipped with warning
+    agents = await boss._resolve_reviewer_agents(
+        reviewer_roles=["researcher", "missing-role"],
+        assigned_role="writer",
+    )
+    assert "a-1" in agents
+    # missing-role has no matching agent, so it should NOT appear
+    assert len(agents) == 1
+
+
+@pytest.mark.asyncio
+async def test_resolve_reviewer_agents_skips_self_role(tmp_path):
+    """_resolve_reviewer_agents skips roles that match assigned_role."""
+    mgr = await _make_db(tmp_path)
+
+    db = await mgr.open_write()
+    try:
+        for agent_id, role in [("a-1", "researcher"), ("a-2", "writer")]:
+            await db.execute(
+                "INSERT INTO agent_status (agent_id, agent_role, status) VALUES (?, ?, 'idle')",
+                (agent_id, role),
+            )
+        await db.commit()
+    finally:
+        await db.close()
+
+    boss = _make_boss(mgr)
+    agents = await boss._resolve_reviewer_agents(
+        reviewer_roles=["researcher", "writer"],
+        assigned_role="researcher",  # researcher cannot review own work
+    )
+    assert "a-2" in agents
+    assert "a-1" not in agents
+
+
+@pytest.mark.asyncio
+async def test_gap_fill_no_active_goal(tmp_path):
+    """_gap_fill_and_completion_check returns early when no active goal exists."""
+    mgr = await _make_db(tmp_path)
+    boss = _make_boss(mgr)
+    # Empty DB — no goals at all — should return early without error
+    await boss._gap_fill_and_completion_check()  # Must not raise
+
+
+@pytest.mark.asyncio
+async def test_gap_fill_skips_when_active_tasks_exist(tmp_path):
+    """Gap fill does not call decompose_goal when active tasks (cnt > 0) exist."""
+    from runtime.boss import GoalCompletionResult
+
+    mgr = await _make_db(tmp_path)
+    goal_id = _uuid()
+    await _insert_goal(mgr, goal_id, "Goal with active work")
+
+    # Insert one in-progress task so cnt > 0
+    task_id = _uuid()
+    db = await mgr.open_write()
+    try:
+        await db.execute(
+            "INSERT INTO tasks (id, goal_id, title, description, status, priority, "
+            "model_tier, escalation_count, reviewer_roles, created_at, updated_at) "
+            "VALUES (?, ?, 'Active task', 'desc', 'in-progress', 50, 'haiku', 0, '[]', ?, ?)",
+            (task_id, goal_id, _now_iso(), _now_iso()),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    # LLM says NOT complete — so gap fill branch is reached
+    mock_result = MagicMock()
+    mock_result.parsed_output = GoalCompletionResult(is_complete=False, reason="Still working")
+
+    boss = _make_boss(mgr)
+    with patch.object(boss, "decompose_goal", new_callable=AsyncMock) as mock_decompose:
+        with patch.object(boss._llm.messages, "parse", new=AsyncMock(return_value=mock_result)):
+            # Need approved tasks for LLM to be called; add one approved task too
+            approved_id = _uuid()
+            db = await mgr.open_write()
+            try:
+                await db.execute(
+                    "INSERT INTO tasks (id, goal_id, title, description, status, priority, "
+                    "model_tier, escalation_count, reviewer_roles, created_at, updated_at) "
+                    "VALUES (?, ?, 'Done task', 'desc', 'approved', 50, 'haiku', 0, '[]', ?, ?)",
+                    (approved_id, goal_id, _now_iso(), _now_iso()),
+                )
+                await db.commit()
+            finally:
+                await db.close()
+            await boss._gap_fill_and_completion_check()
+    # decompose_goal should NOT be called because cnt > 0 active tasks
+    mock_decompose.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_check_goal_completion_returns_false_for_empty_summaries(tmp_path):
+    """_check_goal_completion returns False immediately when no completed summaries."""
+    mgr = await _make_db(tmp_path)
+    boss = _make_boss(mgr)
+    result = await boss._check_goal_completion("Some goal", [])
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_check_goal_completion_exception_returns_false(tmp_path):
+    """_check_goal_completion returns False (fail-safe) when LLM raises."""
+    mgr = await _make_db(tmp_path)
+    boss = _make_boss(mgr)
+    with patch.object(boss._llm.messages, "parse", side_effect=RuntimeError("LLM down")):
+        result = await boss._check_goal_completion("Some goal", ["Task A done", "Task B done"])
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_post_unblocking_hint_exception_uses_fallback(tmp_path):
+    """_post_unblocking_hint uses fallback hint text when LLM raises."""
+    mgr = await _make_db(tmp_path)
+    goal_id = _uuid()
+    task_id = _uuid()
+    await _insert_goal(mgr, goal_id)
+    await _insert_task(mgr, task_id, goal_id, "in-progress")
+
+    boss = _make_boss(mgr)
+    with patch.object(boss._llm.messages, "parse", side_effect=RuntimeError("LLM error")):
+        # Should NOT raise — fallback hint is used instead
+        await boss._post_unblocking_hint(task_id, "Test Task", "Test description")
+
+    db = await mgr.open_read()
+    try:
+        async with db.execute(
+            "SELECT content FROM task_comments WHERE task_id = ?", (task_id,)
+        ) as cur:
+            comments = await cur.fetchall()
+    finally:
+        await db.close()
+    assert len(comments) >= 1
+    # Fallback hint should mention "stuck" or "smaller sub-step"
+    assert any("stuck" in c["content"] or "sub-step" in c["content"] for c in comments)
+
+
+@pytest.mark.asyncio
+async def test_decompose_goal_llm_exception_raises(tmp_path):
+    """_decompose_goal_llm re-raises LLM exceptions (no silent fallback)."""
+    mgr = await _make_db(tmp_path)
+    goal_id = _uuid()
+    await _insert_goal(mgr, goal_id)
+
+    boss = _make_boss(mgr)
+    with patch.object(boss._llm.messages, "parse", side_effect=RuntimeError("API down")):
+        with pytest.raises(RuntimeError, match="API down"):
+            await boss.decompose_goal(goal_id, "Test goal description")
+
+
+@pytest.mark.asyncio
+async def test_evaluate_reviews_no_reviews_returns_pending(tmp_path):
+    """_evaluate_reviews returns 'pending' when no reviews exist for task."""
+    mgr = await _make_db(tmp_path)
+    goal_id = _uuid()
+    task_id = _uuid()
+    await _insert_goal(mgr, goal_id)
+    await _insert_task(mgr, task_id, goal_id, "peer_review")
+
+    boss = _make_boss(mgr)
+    status = await boss._evaluate_reviews(task_id)
+    assert status == "pending"
