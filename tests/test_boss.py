@@ -398,19 +398,67 @@ async def test_decompose_goal_creates_task_review_rows(tmp_path):
 # ── Heartbeat counter / gap-fill ──────────────────────────────────────────────
 
 
-def test_gap_fill_runs_every_3_heartbeats():
-    pytest.importorskip("runtime.boss")
-    pytest.xfail("not implemented yet")
+@pytest.mark.asyncio
+async def test_gap_fill_runs_every_3_heartbeats(tmp_path):
+    mgr = await _make_db(tmp_path)
+    boss = _make_boss(mgr)
+
+    with patch.object(boss, "_gap_fill_and_completion_check", new_callable=AsyncMock) as mock_gap:
+        # Also patch _detect_stuck_tasks to avoid DB calls for non-existent tasks
+        with patch.object(boss, "_detect_stuck_tasks", new_callable=AsyncMock):
+            for _ in range(6):
+                await boss.do_own_tasks()
+    assert mock_gap.call_count == 2  # Called on heartbeat 3 and 6
 
 
-def test_gap_fill_does_not_run_on_heartbeat_1():
-    pytest.importorskip("runtime.boss")
-    pytest.xfail("not implemented yet")
+@pytest.mark.asyncio
+async def test_gap_fill_does_not_run_on_heartbeat_1(tmp_path):
+    mgr = await _make_db(tmp_path)
+    boss = _make_boss(mgr)
+
+    with patch.object(boss, "_gap_fill_and_completion_check", new_callable=AsyncMock) as mock_gap:
+        with patch.object(boss, "_detect_stuck_tasks", new_callable=AsyncMock):
+            await boss.do_own_tasks()
+    assert mock_gap.call_count == 0
 
 
-def test_goal_completion_marks_goal_done():
-    pytest.importorskip("runtime.boss")
-    pytest.xfail("not implemented yet")
+@pytest.mark.asyncio
+async def test_goal_completion_marks_goal_done(tmp_path):
+    from runtime.boss import GoalCompletionResult
+
+    mgr = await _make_db(tmp_path)
+    goal_id = _uuid()
+    await _insert_goal(mgr, goal_id, "Build date arithmetic library")
+
+    # Insert 2 approved tasks to simulate completed work
+    for i in range(2):
+        task_id = _uuid()
+        db = await mgr.open_write()
+        try:
+            await db.execute(
+                "INSERT INTO tasks (id, goal_id, title, description, status, priority, "
+                "model_tier, escalation_count, reviewer_roles, created_at, updated_at) "
+                "VALUES (?, ?, ?, 'desc', 'approved', 50, 'haiku', 0, '[]', ?, ?)",
+                (task_id, goal_id, f"Task {i}", _now_iso(), _now_iso()),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+
+    mock_result = MagicMock()
+    mock_result.parsed_output = GoalCompletionResult(is_complete=True, reason="All tasks done")
+
+    boss = _make_boss(mgr)
+    with patch.object(boss._llm.messages, "parse", new=AsyncMock(return_value=mock_result)):
+        await boss._gap_fill_and_completion_check()
+
+    db = await mgr.open_read()
+    try:
+        async with db.execute("SELECT status FROM goals WHERE id = ?", (goal_id,)) as cur:
+            row = await cur.fetchone()
+    finally:
+        await db.close()
+    assert row["status"] == "completed"
 
 
 # ── Stuck detection ───────────────────────────────────────────────────────────
