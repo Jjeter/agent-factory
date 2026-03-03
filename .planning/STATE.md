@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-03T00:46:12Z"
+last_updated: "2026-03-03T00:57:00Z"
 progress:
   total_phases: 7
   completed_phases: 2
-  total_plans: 9
-  completed_plans: 9
+  total_plans: 10
+  completed_plans: 10
 ---
 
 # Agent Factory — State
@@ -23,6 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 **Current focus:** Phase 3 — Boss Agent
 
 ## Session Log
+
+### 2026-03-03 — Plan 03-01 executed (BossAgent core — Wave 1)
+- Stopped at: Completed 03-01-PLAN.md
+- Last commit: c76ca6b feat(03-01): implement BossAgent core — peer review promotion and goal decomposition
+- Key decisions: all 10 Wave 1 tests written in single RED commit (shared helpers); patch.object(boss._llm.messages, 'parse') worked directly — no class-level mock needed; 10 GREEN, 9 xfail, 97% coverage
 
 ### 2026-03-03 — Plan 03-00 executed (TDD RED — 19 BossAgent stubs + 7 CLI stubs)
 - Stopped at: Completed 03-00-PLAN.md
@@ -72,9 +77,9 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 ## Current Position
 
 - Phase 3 of 7: Boss Agent — IN PROGRESS
-- Current Plan: 00 of 04 complete (TDD RED stubs done; Waves 1-3 remaining)
-- Status: Plan 03-00 complete (19 BossAgent + 7 CLI stubs, reviewer_roles schema, tabulate dep); Wave 1 next
-- Next: Phase 3 Plan 01 — BossAgent core implementation (Wave 1)
+- Current Plan: 01 of 04 complete (TDD RED + Wave 1 done; Waves 2-3 remaining)
+- Status: Plan 03-01 complete (BossAgent core: peer review promotion, goal decomposition, 10 GREEN, 97% coverage); Wave 2 next
+- Next: Phase 3 Plan 02 — BossAgent Wave 2 (stuck detection + gap-fill)
 
 ## Blockers / Concerns
 
@@ -108,3 +113,5 @@ None.
 | pytest.importorskip inside test body for boss stubs (not module level) | boss.py absent until Wave 1 — module-level import crashes collection | — Done (03-00) |
 | reviewer_roles as nullable TEXT column on tasks (JSON list) | Avoids join table complexity for V1; boss writes JSON string at task creation time | — Done (03-00): schema.sql updated |
 | tabulate>=0.9.0 added to project dependencies | Required for human-readable table output in cluster CLI commands (Wave 3) | — Done (03-00): pyproject.toml updated |
+| All Wave 1 tests written in single RED commit (both Task 1 + Task 2 test groups) | Shared helpers (_make_db, _insert_*) benefit all groups; plan noted no boss.py changes for Task 2 | — Done (03-01) |
+| patch.object(boss._llm.messages, 'parse') worked directly for mock | No class-level AsyncAnthropic patch needed; simpler test setup | — Done (03-01) |
