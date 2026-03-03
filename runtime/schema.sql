@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     model_tier       TEXT NOT NULL DEFAULT 'haiku',  -- haiku | sonnet | opus
     escalation_count INTEGER NOT NULL DEFAULT 0,
     stuck_since      TEXT,                           -- ISO 8601; nullable
+    reviewer_roles   TEXT,                           -- JSON list e.g. '["researcher","strategist"]'
     created_at       TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at       TEXT NOT NULL DEFAULT (datetime('now'))
 );
