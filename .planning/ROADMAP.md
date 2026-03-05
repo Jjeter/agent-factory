@@ -1,6 +1,6 @@
 # Agent Factory — Roadmap
 
-*Last updated: 2026-02-28*
+*Last updated: 2026-03-04*
 *Milestone: v0.1.0 — Factory MVP*
 
 ---
@@ -118,6 +118,16 @@ Plans:
 - Peer reviewer produces ≥2 sentences of feedback and sets status to approved or rejected
 - Rejected tasks increment `escalation_count` correctly
 - Worker cannot call tools not listed in its `agents/<role>.yaml`
+
+**Plans:** 6 plans
+
+Plans:
+- [ ] 04-00-PLAN.md — TDD RED stubs: 18 worker tests + 2 config stubs (Wave 0)
+- [ ] 04-01-PLAN.md — Schema migration, AgentConfig extension, load_agent_config merge, boss persistence (Wave 1)
+- [ ] 04-02-PLAN.md — WorkerAgent skeleton: do_own_tasks with resume-first claiming (Wave 2)
+- [ ] 04-03-PLAN.md — WorkerAgent execution: LLM call, document, progress comment, peer_review transition (Wave 3)
+- [ ] 04-04-PLAN.md — WorkerAgent peer review: do_peer_reviews, ReviewDecision, feedback comment (Wave 4)
+- [ ] 04-05-PLAN.md — Role YAML configs (researcher, writer, strategist) + coverage gate (Wave 5)
 
 ---
 
