@@ -1,0 +1,5 @@
+# Shared base configuration for all agents in this cluster.
+# Role-specific YAML files override/extend these defaults.
+db_path: db/cluster.db
+interval_seconds: 600.0
+jitter_seconds: 30.0
