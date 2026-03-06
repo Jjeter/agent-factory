@@ -64,7 +64,6 @@ def test_agent_config_system_prompt_and_tool_allowlist():
     assert cfg.tool_allowlist == ["tool_a", "tool_b"]
 
 
-@pytest.mark.xfail(reason="load_agent_config merge signature not implemented until Plan 04-01")
 def test_load_agent_config_merge(tmp_path):
     """W-02 / W-03: load_agent_config merges cluster.yaml base with role YAML overlay."""
     config_mod = pytest.importorskip("runtime.config")

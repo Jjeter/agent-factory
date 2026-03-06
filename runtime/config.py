@@ -27,6 +27,9 @@ class AgentConfig(BaseModel):
     state_dir: Path = Field(default=Path("runtime/state"))
     # Optional DB path for direct construction in tests/heartbeat
     db_path: Optional[str] = Field(default=None)
+    # Phase 4: WorkerAgent role-specific fields (populated from role YAML overlay)
+    system_prompt: str = Field(default="")
+    tool_allowlist: list[str] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -44,12 +47,32 @@ class AgentConfig(BaseModel):
         return data
 
 
-def load_agent_config(path: Path) -> AgentConfig:
+def load_agent_config(
+    path: Path, cluster_config_path: Path | None = None
+) -> AgentConfig:
     """Load and validate an AgentConfig from a YAML file.
 
+    When ``cluster_config_path`` is provided the cluster YAML is loaded first as a
+    base dict, then the role YAML is merged on top (role values win on conflict).
+    This allows shared cluster settings (db_path, interval_seconds, jitter_seconds)
+    to be inherited by each role YAML without repetition.
+
+    Args:
+        path: Path to the role-specific YAML file (required).
+        cluster_config_path: Optional path to the cluster base YAML file.
+            When provided, merged as ``{**cluster_raw, **role_raw}`` so role keys
+            override cluster keys.
+
     Raises:
-        FileNotFoundError: If path does not exist (from Path.read_text).
+        FileNotFoundError: If path or cluster_config_path does not exist.
         pydantic.ValidationError: If required fields are missing or invalid.
     """
-    raw = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return AgentConfig.model_validate(raw)
+    raw: dict = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if cluster_config_path is not None:
+        cluster_raw: dict = yaml.safe_load(
+            cluster_config_path.read_text(encoding="utf-8")
+        )
+        merged = {**cluster_raw, **raw}
+    else:
+        merged = raw
+    return AgentConfig.model_validate(merged)
