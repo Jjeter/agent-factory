@@ -490,7 +490,7 @@ async def test_re_execution_prompt_includes_prior_doc_and_feedback(tmp_path):
     db = await mgr.open_write()
     try:
         await db.execute(
-            "INSERT INTO task_comments (id, task_id, author_id, comment_type, content, created_at) "
+            "INSERT INTO task_comments (id, task_id, agent_id, comment_type, content, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             (_uuid(), task_id, "reviewer-1", "feedback", "Needs more citations.", _now_iso()),
         )
@@ -787,7 +787,7 @@ async def test_peer_review_prompt_excludes_prior_reviewer_comments(tmp_path):
     db = await mgr.open_write()
     try:
         await db.execute(
-            "INSERT INTO task_comments (id, task_id, author_id, comment_type, content, created_at) "
+            "INSERT INTO task_comments (id, task_id, agent_id, comment_type, content, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 _uuid(),
