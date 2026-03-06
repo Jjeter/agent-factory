@@ -414,7 +414,9 @@ class BossAgent(BaseAgent):
         try:
             # Reset task status
             await db.execute(
-                "UPDATE tasks SET status = 'in-progress', updated_at = ? WHERE id = ?",
+                "UPDATE tasks SET status = 'in-progress', "
+                "escalation_count = escalation_count + 1, "
+                "updated_at = ? WHERE id = ?",
                 (_now_iso(), task_id),
             )
             # Reset reviews to pending (reviewer can re-review after worker re-submits)

@@ -225,6 +225,31 @@ async def test_any_rejection_returns_to_in_progress(tmp_path):
     assert all(r["status"] == "pending" for r in review_rows)
 
 
+@pytest.mark.asyncio
+async def test_rejection_increments_escalation_count(tmp_path):
+    """_reject_back_to_in_progress must increment escalation_count by 1."""
+    mgr = await _make_db(tmp_path)
+    goal_id = _uuid()
+    task_id = _uuid()
+    await _insert_goal(mgr, goal_id)
+    await _insert_task(mgr, task_id, goal_id, "peer_review", escalation_count=0)
+    await _insert_review(mgr, task_id, "agent-2", "rejected")
+    await _insert_review(mgr, task_id, "agent-3", "approved")
+
+    boss = _make_boss(mgr)
+    await boss.do_peer_reviews()
+
+    db = await mgr.open_read()
+    try:
+        async with db.execute(
+            "SELECT escalation_count FROM tasks WHERE id = ?", (task_id,)
+        ) as cur:
+            row = await cur.fetchone()
+    finally:
+        await db.close()
+    assert row["escalation_count"] == 1
+
+
 # ── Goal decomposition ────────────────────────────────────────────────────────
 
 
