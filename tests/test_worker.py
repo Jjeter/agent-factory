@@ -229,7 +229,6 @@ def test_agent_config_has_system_prompt_and_tool_allowlist_fields():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(reason="load_agent_config merge signature not implemented until Plan 04-01")
 def test_load_agent_config_role_wins_on_conflict(tmp_path):
     """W-03: Role YAML overrides cluster.yaml on conflicting fields."""
     pytest.importorskip("runtime.worker")
