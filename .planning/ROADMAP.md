@@ -119,7 +119,7 @@ Plans:
 - Rejected tasks increment `escalation_count` correctly
 - Worker cannot call tools not listed in its `agents/<role>.yaml`
 
-**Plans:** 6 plans
+**Plans:** 1/6 plans executed
 
 Plans:
 - [ ] 04-00-PLAN.md — TDD RED stubs: 18 worker tests + 2 config stubs (Wave 0)

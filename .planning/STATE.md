@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-03T05:29:24.079Z"
+last_updated: "2026-03-06T02:48:57.732Z"
 progress:
-  total_phases: 3
+  total_phases: 7
   completed_phases: 3
-  total_plans: 13
-  completed_plans: 13
+  total_plans: 19
+  completed_plans: 14
 ---
 
 # Agent Factory — State
@@ -23,6 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 **Current focus:** Phase 4 — Worker Agents
 
 ## Session Log
+
+### 2026-03-06 — Plan 04-01 executed (WorkerAgent prerequisites)
+- Stopped at: Completed 04-01-PLAN.md
+- Last commit: 49cd8d8 feat(04-01): add assigned_role schema migration and boss persistence (W-04)
+- Key decisions: cluster_config_path is load-time concern only (not on AgentConfig model); assigned_role in both schema.sql DDL and ALTER TABLE migration for fresh+existing DB; bare except catches SQLite OperationalError on duplicate column; role values win on merge {**cluster_raw, **role_raw}
 
 ### 2026-03-04 — Phase 4 context gathered
 - Stopped at: Phase 4 context gathered
@@ -96,9 +101,9 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-- Phase 4 of 7: Worker Agents — context gathered, ready for planning
-- Status: 04-CONTEXT.md written; no plans yet
-- Next: /gsd:plan-phase 4
+- Phase 4 of 7: Worker Agents — Plan 04-01 complete
+- Status: WorkerAgent prerequisites done; assigned_role column migrated; config merge implemented
+- Next: 04-02-PLAN.md (WorkerAgent core — task claiming + execution)
 
 ## Blockers / Concerns
 
@@ -140,3 +145,6 @@ None.
 | Gap-fill: only trigger decompose_goal() when cnt==0 active tasks | Prevents task explosion; gap-fill is only for when no work is in flight | — Done (03-02) |
 | goal set command archives old active goal before inserting new | Prevents orphaned goals; ensures single active goal at all times | — Done (03-03) |
 | INSERT OR REPLACE handles task_reviews UNIQUE constraint on rejection path | Avoids IntegrityError when boss re-creates review rows after rejection resets | — Done (03-03) |
+| cluster_config_path is a load-time concern, not on AgentConfig model | AgentConfig holds runtime values only; file merging is a loading concern (keeps model clean) | — Done (04-01): load_agent_config() accepts optional 2nd path |
+| assigned_role in schema.sql DDL AND ALTER TABLE migration in up() | Fresh DBs get column from DDL; existing pre-04-01 DBs get column from migration — both paths covered | — Done (04-01): up() now idempotent with assigned_role |
+| Role YAML wins on merge conflict: {**cluster_raw, **role_raw} | Role file is more specific; cluster provides shared defaults (db_path, interval_seconds) | — Done (04-01): load_agent_config merge pattern |
