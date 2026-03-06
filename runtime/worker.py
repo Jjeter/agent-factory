@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
+from typing import Any, Literal
 
 import pydantic
 from anthropic import AsyncAnthropic
@@ -45,9 +45,9 @@ _REVIEW_MODEL = "claude-sonnet-4-6"
 class ReviewDecision(pydantic.BaseModel):
     """Structured output for peer review LLM calls."""
 
-    decision: str  # "approve" | "reject"
+    decision: Literal["approve", "reject"]
     feedback: str
-    required_changes: str = ""
+    required_changes: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -71,8 +71,10 @@ class WorkerAgent(BaseAgent):
     # ── Public overrides ───────────────────────────────────────────────────
 
     async def do_peer_reviews(self) -> None:
-        """Stub — implemented in Plan 04-04."""
-        pass
+        """Fetch pending reviews for this agent and process each one."""
+        pending = await self._fetch_pending_reviews()
+        for task_id in pending:
+            await self._perform_review(task_id)
 
     async def do_own_tasks(self) -> None:
         """Resume-first task claiming: check in-progress before claiming from todo."""
@@ -272,16 +274,103 @@ class WorkerAgent(BaseAgent):
     async def _fetch_pending_reviews(self) -> list[str]:
         """Return task_ids where this agent is a pending reviewer.
 
-        Filters: task_reviews.reviewer_id = agent_id AND status = 'pending'.
+        Filters: reviewer_id = agent_id AND task_reviews.status = 'pending'
+        AND tasks.status = 'peer_review'.
         """
         db = await self._db.open_read()
         try:
             async with db.execute(
                 "SELECT tr.task_id FROM task_reviews tr "
-                "WHERE tr.reviewer_id = ? AND tr.status = 'pending'",
+                "JOIN tasks t ON t.id = tr.task_id "
+                "WHERE tr.reviewer_id = ? AND tr.status = 'pending' AND t.status = 'peer_review'",
                 (self._config.agent_id,),
             ) as cur:
                 rows = await cur.fetchall()
         finally:
             await db.close()
         return [row["task_id"] for row in rows]
+
+    async def _perform_review(self, task_id: str) -> None:
+        """Perform an independent peer review for the given task.
+
+        Fetches task details and latest document (no prior reviewer comments —
+        independence requirement). Calls the LLM (always Sonnet), posts a
+        feedback comment, and updates the task_reviews row.
+        """
+        db = await self._db.open_read()
+        try:
+            async with db.execute(
+                "SELECT id, title, description FROM tasks WHERE id = ?", (task_id,)
+            ) as cur:
+                task_row = await cur.fetchone()
+            async with db.execute(
+                "SELECT content FROM documents WHERE task_id = ? ORDER BY version DESC LIMIT 1",
+                (task_id,),
+            ) as cur:
+                doc_row = await cur.fetchone()
+        finally:
+            await db.close()
+
+        if doc_row is None:
+            logger.warning("Skipping review for task %s — no document found", task_id)
+            return
+
+        parsed = await self._llm.messages.parse(
+            model=_REVIEW_MODEL,
+            max_tokens=1024,
+            system=(
+                "You are a peer reviewer. Evaluate the work objectively. "
+                "Write a minimum of 2 sentences with specific observations. "
+                "Only reject if there are substantive quality issues."
+            ),
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Task: {task_row['title']}\n\nDescription: {task_row['description']}\n\n"
+                    f"--- Work to review ---\n{doc_row['content']}"
+                ),
+            }],
+            output_format=ReviewDecision,
+        )
+        decision = parsed.parsed_output
+
+        feedback_content = decision.feedback
+        if decision.decision == "reject" and decision.required_changes:
+            feedback_content = f"{decision.feedback}\n\nRequired changes: {decision.required_changes}"
+
+        decision_status = {"approve": "approved", "reject": "rejected"}[decision.decision]
+
+        now = _now_iso()
+        db = await self._db.open_write()
+        try:
+            await db.execute(
+                "INSERT INTO task_comments (id, task_id, agent_id, comment_type, content, created_at) "
+                "VALUES (?, ?, ?, 'feedback', ?, ?)",
+                (_uuid(), task_id, self._config.agent_id, feedback_content, now),
+            )
+            await db.execute(
+                "UPDATE task_reviews SET status = ? WHERE task_id = ? AND reviewer_id = ?",
+                (decision_status, task_id, self._config.agent_id),
+            )
+            await db.execute(
+                "INSERT INTO activity_log (id, agent_id, task_id, action, details, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    _uuid(),
+                    self._config.agent_id,
+                    task_id,
+                    f"review_{decision.decision}d",
+                    json.dumps({"decision": decision.decision}),
+                    now,
+                ),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+
+        logger.info(
+            "Worker %s reviewed task %s: %s",
+            self._config.agent_id,
+            task_id,
+            decision_status,
+        )
