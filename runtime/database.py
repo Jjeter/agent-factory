@@ -72,12 +72,20 @@ class DatabaseManager:
     async def up(self) -> None:
         """Initialize schema (idempotent). Used by CLI 'cluster db up'.
 
-        Opens its own connection, runs init_schema, then closes the connection.
-        Safe to call multiple times.
+        Opens its own connection, runs init_schema, applies any additive
+        ALTER TABLE migrations, then closes the connection. Safe to call
+        multiple times — the schema DDL uses IF NOT EXISTS and the ALTER TABLE
+        migrations silently ignore duplicate-column errors.
         """
         db = await self.open_write()
         try:
             await self.init_schema(db)
+            # Add assigned_role column if not already present (idempotent migration)
+            try:
+                await db.execute("ALTER TABLE tasks ADD COLUMN assigned_role TEXT")
+                await db.commit()
+            except Exception:
+                pass  # Column already exists — SQLite raises OperationalError on duplicate column
         finally:
             await db.close()
 

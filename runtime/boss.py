@@ -511,8 +511,9 @@ class BossAgent(BaseAgent):
         try:
             await db.execute(
                 "INSERT INTO tasks (id, goal_id, title, description, assigned_to, status, "
-                "priority, model_tier, escalation_count, reviewer_roles, created_at, updated_at) "
-                "VALUES (?, ?, ?, ?, ?, 'todo', ?, ?, 0, ?, ?, ?)",
+                "priority, model_tier, escalation_count, reviewer_roles, assigned_role, "
+                "created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, 'todo', ?, ?, 0, ?, ?, ?, ?)",
                 (
                     task_id,
                     goal_id,
@@ -522,6 +523,7 @@ class BossAgent(BaseAgent):
                     spec.priority,
                     spec.model_tier,
                     json.dumps(spec.reviewer_roles),
+                    spec.assigned_role,
                     now,
                     now,
                 ),
