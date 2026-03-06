@@ -47,3 +47,45 @@ def test_load_agent_config(tmp_path):
     assert isinstance(result, AgentConfig)
     assert result.agent_id == "test-agent"
     assert result.role == "worker"
+
+
+def test_agent_config_system_prompt_and_tool_allowlist():
+    """W-02: AgentConfig accepts system_prompt (str) and tool_allowlist (list[str]) fields."""
+    config_mod = pytest.importorskip("runtime.config")
+    AgentConfig = config_mod.AgentConfig
+
+    cfg = AgentConfig(
+        agent_id="researcher-1",
+        role="researcher",
+        system_prompt="You are a researcher. Produce detailed findings.",
+        tool_allowlist=["tool_a", "tool_b"],
+    )
+    assert cfg.system_prompt == "You are a researcher. Produce detailed findings."
+    assert cfg.tool_allowlist == ["tool_a", "tool_b"]
+
+
+@pytest.mark.xfail(reason="load_agent_config merge signature not implemented until Plan 04-01")
+def test_load_agent_config_merge(tmp_path):
+    """W-02 / W-03: load_agent_config merges cluster.yaml base with role YAML overlay."""
+    config_mod = pytest.importorskip("runtime.config")
+    load_agent_config = config_mod.load_agent_config
+
+    cluster_path = tmp_path / "cluster.yaml"
+    cluster_path.write_text(
+        "db_path: /shared/cluster.db\ninterval_seconds: 300.0\njitter_seconds: 15.0\n"
+    )
+    role_path = tmp_path / "researcher.yaml"
+    role_path.write_text(
+        "agent_id: researcher-1\nagent_role: researcher\n"
+        "system_prompt: You are a researcher.\n"
+        "tool_allowlist: []\n"
+    )
+
+    cfg = load_agent_config(role_path, cluster_config_path=cluster_path)
+
+    # Role fields take priority
+    assert cfg.agent_id == "researcher-1"
+    assert cfg.system_prompt == "You are a researcher."
+    # Cluster defaults merged in
+    assert cfg.db_path == "/shared/cluster.db"
+    assert cfg.interval_seconds == 300.0
