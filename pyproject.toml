@@ -30,7 +30,7 @@ cluster = "runtime.cli:cluster_cli"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "--cov=runtime --cov-report=term-missing --cov-fail-under=80"
+addopts = "--cov=runtime --cov=factory --cov-report=term-missing --cov-fail-under=80"
 
 [tool.hatch.build.targets.wheel]
-packages = ["runtime"]
+packages = ["runtime", "factory"]
