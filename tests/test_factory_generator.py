@@ -1,7 +1,6 @@
 import pytest
 
 
-@pytest.mark.xfail(reason="GEN-01: not implemented")
 def test_render_agent_yaml():
     gen = pytest.importorskip("factory.generator")
     models = pytest.importorskip("factory.models")
@@ -16,7 +15,6 @@ def test_render_agent_yaml():
     assert "researcher" in result
 
 
-@pytest.mark.xfail(reason="GEN-02: not implemented")
 def test_render_docker_compose():
     gen = pytest.importorskip("factory.generator")
     models = pytest.importorskip("factory.models")
@@ -33,7 +31,6 @@ def test_render_docker_compose():
     assert "writer" in result
 
 
-@pytest.mark.xfail(reason="GEN-03: not implemented")
 def test_render_cluster_yaml():
     gen = pytest.importorskip("factory.generator")
     models = pytest.importorskip("factory.models")
@@ -43,16 +40,13 @@ def test_render_cluster_yaml():
     assert loaded["cluster_name"] == "test-cluster"
 
 
-@pytest.mark.xfail(reason="GEN-04: not implemented")
 def test_launch_sh_fails_without_key():
-    import subprocess, textwrap
     gen = pytest.importorskip("factory.generator")
     script = gen.render_launch_sh("test-cluster")
     assert "ANTHROPIC_API_KEY" in script
     assert "exit 1" in script
 
 
-@pytest.mark.xfail(reason="GEN-05: not implemented")
 def test_copy_runtime(tmp_path):
     gen = pytest.importorskip("factory.generator")
     gen.copy_runtime(tmp_path)
