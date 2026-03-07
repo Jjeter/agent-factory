@@ -1,6 +1,6 @@
 # Agent Factory — Roadmap
 
-*Last updated: 2026-03-04*
+*Last updated: 2026-03-07*
 *Milestone: v0.1.0 — Factory MVP*
 
 ---
@@ -122,12 +122,12 @@ Plans:
 **Plans:** 7/7 plans complete
 
 Plans:
-- [ ] 04-00-PLAN.md — TDD RED stubs: 18 worker tests + 2 config stubs (Wave 0)
-- [ ] 04-01-PLAN.md — Schema migration, AgentConfig extension, load_agent_config merge, boss persistence (Wave 1)
-- [ ] 04-02-PLAN.md — WorkerAgent skeleton: do_own_tasks with resume-first claiming (Wave 2)
-- [ ] 04-03-PLAN.md — WorkerAgent execution: LLM call, document, progress comment, peer_review transition (Wave 3)
-- [ ] 04-04-PLAN.md — WorkerAgent peer review: do_peer_reviews, ReviewDecision, feedback comment (Wave 4)
-- [ ] 04-05-PLAN.md — Role YAML configs (researcher, writer, strategist) + coverage gate (Wave 5)
+- [x] 04-00-PLAN.md — TDD RED stubs: 18 worker tests + 2 config stubs (Wave 0)
+- [x] 04-01-PLAN.md — Schema migration, AgentConfig extension, load_agent_config merge, boss persistence (Wave 1)
+- [x] 04-02-PLAN.md — WorkerAgent skeleton: do_own_tasks with resume-first claiming (Wave 2)
+- [x] 04-03-PLAN.md — WorkerAgent execution: LLM call, document, progress comment, peer_review transition (Wave 3)
+- [x] 04-04-PLAN.md — WorkerAgent peer review: do_peer_reviews, ReviewDecision, feedback comment (Wave 4)
+- [x] 04-05-PLAN.md — Role YAML configs (researcher, writer, strategist) + coverage gate (Wave 5)
 
 ---
 
@@ -141,7 +141,7 @@ Plans:
 - `clusters/<name>/docker-compose.yml` generator (parameterized by role count)
 - `clusters/<name>/config/cluster.yaml` and `agents/*.yaml` generators
 - `clusters/<name>/launch.sh` with env var validation
-- Factory CLI: `agent-factory create <goal>`, `agent-factory list`, `agent-factory status`
+- Factory CLI: `agent-factory create <goal>`, `agent-factory list`, `agent-factory status`, `agent-factory add-role`
 - End-to-end test: factory creates a cluster artifact; artifact passes schema and docker-compose validation
 
 **Success Criteria:**
@@ -149,6 +149,15 @@ Plans:
 - `docker compose config` validates the generated `docker-compose.yml` without errors
 - The seeded database contains the correct goal and initial agent_status rows
 - `./launch.sh` fails fast with a clear error if `ANTHROPIC_API_KEY` is not set
+
+**Plans:** 5 plans
+
+Plans:
+- [ ] 05-00-PLAN.md — TDD RED stubs + factory/ package scaffolding (Wave 1)
+- [ ] 05-01-PLAN.md — factory/models.py + factory/generator.py — pure artifact generators (Wave 2)
+- [ ] 05-02-PLAN.md — factory/pipeline.py + factory/boss.py — role decomposition pipeline (Wave 3)
+- [ ] 05-03-PLAN.md — factory CLI subcommands + factory/runner.py — fire-and-forget create (Wave 4)
+- [ ] 05-04-PLAN.md — E2E tests + coverage gate (Wave 5)
 
 ---
 
