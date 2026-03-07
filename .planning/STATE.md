@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-07T13:31:33.814Z"
+last_updated: "2026-03-07T13:37:54.569Z"
 progress:
   total_phases: 7
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 25
-  completed_plans: 24
+  completed_plans: 25
 ---
 
 # Agent Factory — State
@@ -23,6 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 **Current focus:** Phase 5 — Factory Cluster Core Product
 
 ## Session Log
+
+### 2026-03-07 — Plan 05-04 executed (E2E tests — E2E-01 and E2E-02 GREEN)
+- Stopped at: Completed 05-04-PLAN.md (checkpoint:human-verify pending)
+- Last commit: fd9ca1e feat(05-04): implement E2E tests — E2E-01 (full artifact) and E2E-02 (DB seeding)
+- Key decisions: open_write()/open_read() return aiosqlite.Connection directly (await required, not async with) — plan template had incorrect async with pattern; fixed per existing test_boss.py usage; E2E tests use no LLM calls — fixture RoleSpec data drives generator functions directly; agent_status table queryability verified via SELECT count(*) — actual rows seeded at agent startup not factory time; 128 tests GREEN at 88.41% coverage; E2E-01 and E2E-02 both GREEN
 
 ### 2026-03-07 — Plan 05-03 executed (factory CLI + runner — CLI-01 to CLI-07 GREEN)
 - Stopped at: Completed 05-03-PLAN.md
@@ -141,9 +146,9 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-- Phase 5 of 7: Factory Cluster — Plan 05-03 complete (CLI + runner), 1 plan remaining (E2E demo)
-- Status: 126 tests GREEN at 87.58% coverage; CLI-01 through CLI-07 all GREEN; agent-factory create fire-and-forget operational
-- Next: Phase 5, Plan 05-04 — demo cluster + E2E integration test
+- Phase 5 of 7: Factory Cluster — Plan 05-04 complete (E2E tests), checkpoint:human-verify pending
+- Status: 128 tests GREEN at 88.41% coverage; E2E-01 and E2E-02 GREEN; all 25 plans complete
+- Next: checkpoint:human-verify — run full suite, confirm coverage >= 80%, optionally test CLI manually
 
 ## Blockers / Concerns
 
@@ -210,3 +215,4 @@ None.
 | status/add-role exit 0 with info message on not-found | CLI-02/03/05 tests require exit 0 on missing data; ClickException would return exit 1 | — Done (05-03): runtime/cli.py |
 | interval_seconds=30.0 for all factory agents in runner.py | Batch job mode — needs to complete quickly rather than poll every 600s | — Done (05-03): factory/runner.py |
 | run_factory() stagger offsets: 0, 7.5, 15, 22.5s across 30s interval | Prevents all four agents hitting SQLite WAL write lock simultaneously | — Done (05-03): factory/runner.py |
+| open_write()/open_read() return aiosqlite.Connection directly (await required, not async with) | Plan template used incorrect async with pattern; DatabaseManager API uses plain await + explicit close per conftest.py and test_boss.py | — Done (05-04): tests/test_factory_e2e.py |
