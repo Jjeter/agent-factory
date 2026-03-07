@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-07T00:00:00.000Z"
+last_updated: "2026-03-07T11:47:13.657Z"
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 20
-  completed_plans: 20
+  total_plans: 25
+  completed_plans: 21
 ---
 
 # Agent Factory — State
@@ -20,9 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** A working factory cluster that generates self-contained AI agent cluster artifacts
-**Current focus:** Phase 4 — Worker Agents
+**Current focus:** Phase 5 — Factory Cluster Core Product
 
 ## Session Log
+
+### 2026-03-07 — Plan 05-00 executed (TDD RED gate — factory package scaffolding)
+- Stopped at: Completed 05-00-PLAN.md
+- Last commit: a7e6032 test(05-00): add 17 factory test stubs (TDD RED gate)
+- Key decisions: pytest.importorskip inside test body (not module level) — prevents collection crash on stub-only modules; CLI-07 collision_policy uses AND assertion (exit_code != 0 AND "already exists") to avoid trivial xpass; FactoryResearcherAgent/FactorySecurityCheckerAgent/FactoryExecutorAgent are pass-through stubs inheriting WorkerAgent — role behavior via AgentConfig.system_prompt at runtime; factory package importable with 7 stub modules; 17 xfail test stubs establish full Phase 5 test contract; 111 tests GREEN at 95.76% coverage
 
 ### 2026-03-07 — Phase 5 context gathered
 - Stopped at: Phase 5 context gathered
@@ -121,9 +126,9 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-- Phase 5 of 7: Factory Cluster — context gathered, ready for planning
-- Status: 111 tests GREEN at 98.31% coverage (Phase 4 complete); Phase 5 CONTEXT.md written
-- Next: Phase 5 — /gsd:plan-phase 5
+- Phase 5 of 7: Factory Cluster — Plan 05-00 complete (TDD RED gate), 4 plans remaining
+- Status: 111 tests GREEN at 95.76% coverage; 17 xfail factory stubs establish test contract
+- Next: Phase 5, Plan 05-01 — generator implementation (GEN-01 to GEN-05)
 
 ## Blockers / Concerns
 
@@ -172,3 +177,6 @@ None.
 | W-08/W-09/W-10/W-11 confirmed GREEN from 04-02 implementation | 04-02 pre-implemented full _execute_task; 04-03 is verification + test bug fix plan | — Done (04-03): 98.24% coverage |
 | escalation_count incremented atomically in SQL UPDATE (no application-level read-modify-write) | Avoids race condition; simpler than read-then-update | — Done (04-06): _reject_back_to_in_progress() line ~418 |
 | xfail removed (not replaced with skip) from test_load_agent_config_role_wins_on_conflict | Test passes since 04-01 shipped load_agent_config merge — marker was stale XPASS noise | — Done (04-06): tests/test_worker.py line 232 |
+| pytest.importorskip inside test body (not module level) for factory stubs | factory.* absent until 05-01+ implementation — module-level import crashes collection; consistent with Phase 3/4 pattern | — Done (05-00): all 4 factory test files |
+| CLI-07 collision_policy assertion uses AND (exit_code != 0 AND "already exists" in output) | OR condition trivially xpasses since 'create' subcommand doesn't exist yet (returns exit_code=2 for unknown command) | — Done (05-00): tests/test_factory_cli.py |
+| FactoryResearcherAgent/FactorySecurityCheckerAgent/FactoryExecutorAgent are pass-through stubs | Role-specific behavior injected via AgentConfig.system_prompt at runtime per CONTEXT.md locked decision | — Done (05-00): factory/workers.py |
