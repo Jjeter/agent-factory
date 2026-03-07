@@ -2,7 +2,6 @@ import pytest
 from unittest.mock import AsyncMock, patch
 
 
-@pytest.mark.xfail(reason="PIPELINE-01: not implemented")
 async def test_pipeline_produces_roles():
     pipeline = pytest.importorskip("factory.pipeline")
     models = pytest.importorskip("factory.models")
@@ -29,7 +28,6 @@ async def test_pipeline_produces_roles():
     assert len(result.roles) >= 2
 
 
-@pytest.mark.xfail(reason="PIPELINE-02: not implemented")
 async def test_fit_check_retry():
     pipeline = pytest.importorskip("factory.pipeline")
     models = pytest.importorskip("factory.models")
@@ -62,7 +60,6 @@ async def test_fit_check_retry():
     assert isinstance(result, models.FitCheckResult)
 
 
-@pytest.mark.xfail(reason="PIPELINE-03: not implemented")
 async def test_structural_roles_present():
     pipeline = pytest.importorskip("factory.pipeline")
     models = pytest.importorskip("factory.models")
