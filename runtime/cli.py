@@ -1,6 +1,10 @@
 """Click CLI entry points for cluster and agent-factory commands."""
 
 import asyncio
+import os
+import re
+import subprocess
+import sys
 from pathlib import Path
 
 import click
@@ -60,7 +64,231 @@ async def _do_reset(path: Path) -> None:
 
 @click.group()
 def factory_cli() -> None:
-    """Agent Factory management. (Full implementation in Phase 5.)"""
+    """Agent Factory management."""
+
+
+# ---------------------------------------------------------------------------
+# factory_cli: create / list / status / add-role subcommands (Phase 5)
+# ---------------------------------------------------------------------------
+
+
+def _factory_home() -> Path:
+    return Path(os.environ.get("FACTORY_HOME", Path.home() / ".agent-factory"))
+
+
+def _clusters_base() -> Path:
+    """Return the base directory for cluster output dirs.
+
+    Reads FACTORY_CLUSTERS_BASE env var first (for testing), then defaults
+    to Path.cwd() / 'clusters' per the project spec.
+    """
+    env_override = os.environ.get("FACTORY_CLUSTERS_BASE")
+    if env_override:
+        return Path(env_override)
+    return Path.cwd() / "clusters"
+
+
+def _slugify(goal: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", goal.lower()).strip("-")[:50]
+
+
+@factory_cli.command(name="create")
+@click.argument("goal")
+@click.option("--name", default=None, help="Cluster name slug (auto-generated from goal if omitted)")
+@click.option("--force", is_flag=True, default=False, help="Overwrite existing cluster directory")
+def factory_create(goal: str, name: str | None, force: bool) -> None:
+    """Create a new agent cluster from a natural-language goal (fire-and-forget)."""
+    asyncio.run(_do_factory_create(goal, name, force))
+
+
+async def _do_factory_create(goal: str, name: str | None, force: bool) -> None:
+    from runtime.database import DatabaseManager
+    from runtime.models import _uuid, _now_iso
+
+    cluster_name = name or _slugify(goal)
+    factory_home = _factory_home()
+    cluster_dir = _clusters_base() / cluster_name
+
+    if cluster_dir.exists() and not force:
+        raise click.ClickException(
+            f"Cluster '{cluster_name}' already exists at {cluster_dir}. Use --force to overwrite."
+        )
+
+    factory_db = factory_home / "factory.db"
+    factory_home.mkdir(parents=True, exist_ok=True)
+
+    mgr = DatabaseManager(factory_db)
+    await mgr.up()
+
+    goal_id = _uuid()
+    db = await mgr.open_write()
+    try:
+        await db.execute(
+            "INSERT INTO goals (id, title, description, status, created_at) VALUES (?, ?, ?, 'active', ?)",
+            (goal_id, cluster_name, goal, _now_iso()),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    cluster_dir.mkdir(parents=True, exist_ok=True)
+
+    subprocess.Popen(
+        [sys.executable, "-m", "factory.runner", goal_id, str(factory_db)],
+        close_fds=True,
+    )
+
+    click.echo(f"Factory job started: {cluster_name}")
+    click.echo(f"  Factory DB: {factory_db}")
+    click.echo(f"  Track progress: agent-factory status {cluster_name}")
+    click.echo(f"  Cluster output: ./clusters/{cluster_name}/ (when complete)")
+
+
+@factory_cli.command(name="list")
+def factory_list() -> None:
+    """List all factory cluster jobs."""
+    asyncio.run(_do_factory_list())
+
+
+async def _do_factory_list() -> None:
+    from runtime.database import DatabaseManager
+
+    factory_db = _factory_home() / "factory.db"
+    if not factory_db.exists():
+        click.echo("No factory jobs found.")
+        return
+
+    mgr = DatabaseManager(factory_db)
+    db = await mgr.open_read()
+    try:
+        async with db.execute(
+            "SELECT title, status, created_at FROM goals ORDER BY created_at DESC"
+        ) as cur:
+            rows = await cur.fetchall()
+    finally:
+        await db.close()
+
+    if not rows:
+        click.echo("No factory jobs found.")
+        return
+
+    from tabulate import tabulate
+
+    table = [[r["title"], r["status"], r["created_at"]] for r in rows]
+    click.echo(tabulate(table, headers=["Name", "Status", "Created"], tablefmt="simple"))
+
+
+@factory_cli.command(name="status")
+@click.argument("name")
+def factory_status(name: str) -> None:
+    """Show status of a factory job."""
+    asyncio.run(_do_factory_status(name))
+
+
+async def _do_factory_status(name: str) -> None:
+    from runtime.database import DatabaseManager
+
+    factory_db = _factory_home() / "factory.db"
+    if not factory_db.exists():
+        click.echo(f"Factory job '{name}' not found (no factory DB).")
+        return
+
+    mgr = DatabaseManager(factory_db)
+    db = await mgr.open_read()
+    try:
+        async with db.execute(
+            "SELECT id, title, status FROM goals WHERE title = ?", (name,)
+        ) as cur:
+            goal_row = await cur.fetchone()
+
+        if goal_row is None:
+            click.echo(f"Factory job '{name}' not found.")
+            return
+
+        goal_id = goal_row["id"]
+        goal_status = goal_row["status"]
+
+        async with db.execute(
+            "SELECT id, title, status, assigned_to FROM tasks WHERE goal_id = ? ORDER BY priority DESC",
+            (goal_id,),
+        ) as cur:
+            task_rows = await cur.fetchall()
+    finally:
+        await db.close()
+
+    click.echo(f"\nFactory: {name}  [{goal_status.upper()}]\n")
+
+    if task_rows:
+        from tabulate import tabulate
+
+        table = [
+            [r["id"][:8], r["title"], r["status"], r["assigned_to"] or "\u2014"]
+            for r in task_rows
+        ]
+        headers = ["ID", "Title", "Status", "Assigned To"]
+        click.echo(tabulate(table, headers=headers, tablefmt="simple"))
+
+    if goal_status == "completed":
+        click.echo(f"\nCluster ready: ./clusters/{name}/")
+        click.echo(f"  Launch: cd clusters/{name} && ./launch.sh")
+
+
+@factory_cli.command(name="add-role")
+@click.argument("cluster_name")
+@click.argument("role_description")
+def factory_add_role(cluster_name: str, role_description: str) -> None:
+    """Add a new agent role to an existing cluster."""
+    asyncio.run(_do_factory_add_role(cluster_name, role_description))
+
+
+async def _do_factory_add_role(cluster_name: str, role_description: str) -> None:
+    cluster_dir = _clusters_base() / cluster_name
+    if not cluster_dir.exists():
+        click.echo(f"Cluster '{cluster_name}' not found at {cluster_dir}.")
+        return
+
+    from anthropic import AsyncAnthropic
+    from factory.pipeline import _enrich_one_role
+    from factory.models import RoleSpec
+    from factory.generator import render_agent_yaml, render_docker_compose
+
+    llm = AsyncAnthropic()
+
+    role_slug = _slugify(role_description)
+    base_role = RoleSpec(
+        name=role_slug,
+        responsibilities=[role_description],
+        personality_system_prompt=f"You are the {role_slug} agent. {role_description}",
+        tool_allowlist=[],
+    )
+    enriched_role = await _enrich_one_role(base_role, llm)
+
+    agents_dir = cluster_dir / "agents"
+    agents_dir.mkdir(exist_ok=True)
+    role_yaml_path = agents_dir / f"{enriched_role.name}.yaml"
+    role_yaml_path.write_text(render_agent_yaml(enriched_role), encoding="utf-8")
+
+    # Re-render docker-compose with all existing roles + new role
+    existing_roles: list[RoleSpec] = []
+    for yaml_file in sorted(agents_dir.glob("*.yaml")):
+        if yaml_file.stem not in ("boss", "critic"):
+            import yaml as _yaml
+            raw = _yaml.safe_load(yaml_file.read_text(encoding="utf-8"))
+            existing_roles.append(
+                RoleSpec(
+                    name=raw.get("agent_role", yaml_file.stem),
+                    responsibilities=[],
+                    personality_system_prompt=raw.get("system_prompt", ""),
+                    tool_allowlist=raw.get("tool_allowlist", []),
+                )
+            )
+
+    compose_path = cluster_dir / "docker-compose.yml"
+    compose_path.write_text(
+        render_docker_compose(cluster_name, existing_roles), encoding="utf-8"
+    )
+
+    click.echo(f"Role '{enriched_role.name}' added to {cluster_name}. Restart with ./launch.sh to activate.")
 
 
 # ---------------------------------------------------------------------------
