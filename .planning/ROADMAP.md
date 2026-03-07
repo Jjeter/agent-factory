@@ -150,7 +150,7 @@ Plans:
 - The seeded database contains the correct goal and initial agent_status rows
 - `./launch.sh` fails fast with a clear error if `ANTHROPIC_API_KEY` is not set
 
-**Plans:** 5 plans
+**Plans:** 2/5 plans executed
 
 Plans:
 - [ ] 05-00-PLAN.md — TDD RED stubs + factory/ package scaffolding (Wave 1)

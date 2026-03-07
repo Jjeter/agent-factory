@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-07T11:47:13.657Z"
+last_updated: "2026-03-07T11:56:42.187Z"
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 25
-  completed_plans: 21
+  completed_plans: 22
 ---
 
 # Agent Factory — State
@@ -23,6 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 **Current focus:** Phase 5 — Factory Cluster Core Product
 
 ## Session Log
+
+### 2026-03-07 — Plan 05-01 executed (generator implementation — GEN-01 to GEN-05 GREEN)
+- Stopped at: Completed 05-01-PLAN.md
+- Last commit: 5dac3c9 feat(05-01): implement factory/generator.py — seven artifact generator functions
+- Key decisions: yaml.dump(default_flow_style=False, allow_unicode=True) for all YAML output — never f-string YAML; render_dockerfile uses python:3.12-slim default, ubuntu:22.04 when any role has requires_glibc=True; baseline packages (anthropic, aiosqlite, click, pydantic, tabulate) always in render_requirements_txt; boss=index 0, critic=index 1, workers start at index 2 in docker-compose; _offset inner function removed (dead code); 116 tests GREEN at 94.01% coverage
 
 ### 2026-03-07 — Plan 05-00 executed (TDD RED gate — factory package scaffolding)
 - Stopped at: Completed 05-00-PLAN.md
@@ -126,9 +131,9 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-- Phase 5 of 7: Factory Cluster — Plan 05-00 complete (TDD RED gate), 4 plans remaining
-- Status: 111 tests GREEN at 95.76% coverage; 17 xfail factory stubs establish test contract
-- Next: Phase 5, Plan 05-01 — generator implementation (GEN-01 to GEN-05)
+- Phase 5 of 7: Factory Cluster — Plan 05-01 complete (generator implementation), 3 plans remaining
+- Status: 116 tests GREEN at 94.01% coverage; GEN-01 to GEN-05 all GREEN
+- Next: Phase 5, Plan 05-02 — pipeline.py LLM role decomposition (PIPE-01 to PIPE-05)
 
 ## Blockers / Concerns
 
@@ -180,3 +185,6 @@ None.
 | pytest.importorskip inside test body (not module level) for factory stubs | factory.* absent until 05-01+ implementation — module-level import crashes collection; consistent with Phase 3/4 pattern | — Done (05-00): all 4 factory test files |
 | CLI-07 collision_policy assertion uses AND (exit_code != 0 AND "already exists" in output) | OR condition trivially xpasses since 'create' subcommand doesn't exist yet (returns exit_code=2 for unknown command) | — Done (05-00): tests/test_factory_cli.py |
 | FactoryResearcherAgent/FactorySecurityCheckerAgent/FactoryExecutorAgent are pass-through stubs | Role-specific behavior injected via AgentConfig.system_prompt at runtime per CONTEXT.md locked decision | — Done (05-00): factory/workers.py |
+| yaml.dump(default_flow_style=False, allow_unicode=True) for all YAML output in generator.py | Ensures valid multi-line YAML; never f-string YAML which risks injection/formatting errors | — Done (05-01): factory/generator.py |
+| render_dockerfile uses python:3.12-slim by default; switches to ubuntu:22.04 when any role has requires_glibc=True | Slim base is smaller/faster for most clusters; glibc required only for native lib roles | — Done (05-01): factory/generator.py |
+| render_requirements_txt baseline packages: anthropic, aiosqlite, click, pydantic, tabulate — always included | Runtime dependencies always needed; role tool_allowlist adds extras via set union then sort | — Done (05-01): factory/generator.py |
