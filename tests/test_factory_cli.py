@@ -38,8 +38,15 @@ def test_list_clusters():
 
 def test_add_role(tmp_path):
     cli_mod = pytest.importorskip("runtime.cli")
+    import os
     runner = CliRunner()
-    result = runner.invoke(cli_mod.factory_cli, ["add-role", "test-cluster", "A data analyst"])
+    # Use an isolated clusters base so the test doesn't find any real cluster dir
+    env = {**os.environ, "FACTORY_CLUSTERS_BASE": str(tmp_path / "clusters")}
+    result = runner.invoke(
+        cli_mod.factory_cli,
+        ["add-role", "test-cluster", "A data analyst"],
+        env=env,
+    )
     assert result.exit_code == 0
 
 
