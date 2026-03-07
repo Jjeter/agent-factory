@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-07T11:56:42.187Z"
+last_updated: "2026-03-07T13:20:42.133Z"
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 25
-  completed_plans: 22
+  completed_plans: 23
 ---
 
 # Agent Factory — State
@@ -23,6 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 **Current focus:** Phase 5 — Factory Cluster Core Product
 
 ## Session Log
+
+### 2026-03-07 — Plan 05-02 executed (pipeline + boss + workers — PIPELINE-01 to PIPELINE-03 GREEN)
+- Stopped at: Completed 05-02-PLAN.md
+- Last commit: f574e57 feat(05-02): implement factory/boss.py and factory/workers.py
+- Key decisions: decompose_roles always injects boss (index 0) and critic (appended) structural roles after LLM response — never left to LLM discretion; fit_check is single-shot, retry logic (max 2) is caller responsibility; enrich_roles uses asyncio.gather for parallel per-role LLM calls; FactoryBossAgent.decompose_goal is deterministic (no LLM) because factory workflow is fixed; reviewer_agents=["factory-critic-01"] hardcoded for all factory tasks; design-roles task uses model_tier=sonnet, others haiku; lazy imports of TaskSpec and _uuid inside decompose_goal body to avoid circular import; 119 tests GREEN at 93.59% coverage
 
 ### 2026-03-07 — Plan 05-01 executed (generator implementation — GEN-01 to GEN-05 GREEN)
 - Stopped at: Completed 05-01-PLAN.md
@@ -131,9 +136,9 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-- Phase 5 of 7: Factory Cluster — Plan 05-01 complete (generator implementation), 3 plans remaining
-- Status: 116 tests GREEN at 94.01% coverage; GEN-01 to GEN-05 all GREEN
-- Next: Phase 5, Plan 05-02 — pipeline.py LLM role decomposition (PIPE-01 to PIPE-05)
+- Phase 5 of 7: Factory Cluster — Plan 05-02 complete (pipeline + boss + workers), 2 plans remaining
+- Status: 119 tests GREEN at 93.59% coverage; GEN-01 to GEN-05 + PIPELINE-01 to PIPELINE-03 all GREEN
+- Next: Phase 5, Plan 05-03 — factory runner / CLI integration
 
 ## Blockers / Concerns
 
@@ -188,3 +193,11 @@ None.
 | yaml.dump(default_flow_style=False, allow_unicode=True) for all YAML output in generator.py | Ensures valid multi-line YAML; never f-string YAML which risks injection/formatting errors | — Done (05-01): factory/generator.py |
 | render_dockerfile uses python:3.12-slim by default; switches to ubuntu:22.04 when any role has requires_glibc=True | Slim base is smaller/faster for most clusters; glibc required only for native lib roles | — Done (05-01): factory/generator.py |
 | render_requirements_txt baseline packages: anthropic, aiosqlite, click, pydantic, tabulate — always included | Runtime dependencies always needed; role tool_allowlist adds extras via set union then sort | — Done (05-01): factory/generator.py |
+| decompose_roles always injects boss (index 0) and critic (appended) structural roles after LLM response | Boss and critic mandatory in every cluster — never left to LLM discretion | — Done (05-02): factory/pipeline.py |
+| fit_check is single-shot; retry logic (max 2 retries) is caller responsibility | Clean separation of concerns — pipeline function does one thing | — Done (05-02): factory/pipeline.py |
+| enrich_roles uses asyncio.gather for parallel per-role LLM calls | Concurrency matches RESEARCH.md enrichment pattern; O(N roles) latency not O(1) | — Done (05-02): factory/pipeline.py |
+| FactoryBossAgent.decompose_goal is deterministic (no LLM) — 7 fixed factory tasks | Factory artifact workflow is fixed and well-known; pipeline handles LLM decomposition separately | — Done (05-02): factory/boss.py |
+| reviewer_agents=["factory-critic-01"] hardcoded for all factory tasks | Critic is always structural reviewer for factory work — consistent with boss+critic injection in pipeline | — Done (05-02): factory/boss.py |
+| design-roles task uses model_tier="sonnet", all others "haiku" | Role design step warrants stronger model; haiku sufficient for artifact generation tasks | — Done (05-02): factory/boss.py |
+| Lazy imports of TaskSpec and _uuid inside decompose_goal body | Avoids potential circular import at module import time | — Done (05-02): factory/boss.py |
+| FactoryResearcherAgent/FactorySecurityCheckerAgent/FactoryExecutorAgent use SYSTEM_PROMPT ClassVar[str] | WorkerAgent specialization via class attribute — all execution logic inherited from WorkerAgent | — Done (05-02): factory/workers.py |
