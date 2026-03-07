@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-07T13:20:42.133Z"
+last_updated: "2026-03-07T13:31:33.814Z"
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 25
-  completed_plans: 23
+  completed_plans: 24
 ---
 
 # Agent Factory — State
@@ -23,6 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 **Current focus:** Phase 5 — Factory Cluster Core Product
 
 ## Session Log
+
+### 2026-03-07 — Plan 05-03 executed (factory CLI + runner — CLI-01 to CLI-07 GREEN)
+- Stopped at: Completed 05-03-PLAN.md
+- Last commit: 4f7c7b2 feat(05-03): implement factory/runner.py — background subprocess entry point (boss + workers)
+- Key decisions: FACTORY_CLUSTERS_BASE env var for testable cluster dir resolution (default: Path.cwd()/clusters); status/add-role exit 0 with info message on not-found (tests require exit 0); interval_seconds=30.0 for factory agents (batch mode); stagger offsets 0/7.5/15/22.5s across 30s interval; factory imports lazy in runner.py to prevent circular import; 126 tests GREEN at 87.58% coverage; CLI-01 through CLI-07 all GREEN
 
 ### 2026-03-07 — Plan 05-02 executed (pipeline + boss + workers — PIPELINE-01 to PIPELINE-03 GREEN)
 - Stopped at: Completed 05-02-PLAN.md
@@ -136,9 +141,9 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-- Phase 5 of 7: Factory Cluster — Plan 05-02 complete (pipeline + boss + workers), 2 plans remaining
-- Status: 119 tests GREEN at 93.59% coverage; GEN-01 to GEN-05 + PIPELINE-01 to PIPELINE-03 all GREEN
-- Next: Phase 5, Plan 05-03 — factory runner / CLI integration
+- Phase 5 of 7: Factory Cluster — Plan 05-03 complete (CLI + runner), 1 plan remaining (E2E demo)
+- Status: 126 tests GREEN at 87.58% coverage; CLI-01 through CLI-07 all GREEN; agent-factory create fire-and-forget operational
+- Next: Phase 5, Plan 05-04 — demo cluster + E2E integration test
 
 ## Blockers / Concerns
 
@@ -201,3 +206,7 @@ None.
 | design-roles task uses model_tier="sonnet", all others "haiku" | Role design step warrants stronger model; haiku sufficient for artifact generation tasks | — Done (05-02): factory/boss.py |
 | Lazy imports of TaskSpec and _uuid inside decompose_goal body | Avoids potential circular import at module import time | — Done (05-02): factory/boss.py |
 | FactoryResearcherAgent/FactorySecurityCheckerAgent/FactoryExecutorAgent use SYSTEM_PROMPT ClassVar[str] | WorkerAgent specialization via class attribute — all execution logic inherited from WorkerAgent | — Done (05-02): factory/workers.py |
+| FACTORY_CLUSTERS_BASE env var for cluster dir resolution | CliRunner does not change CWD; env var allows CLI-07 collision test to target tmp_path without filesystem coupling; defaults to Path.cwd()/clusters | — Done (05-03): runtime/cli.py |
+| status/add-role exit 0 with info message on not-found | CLI-02/03/05 tests require exit 0 on missing data; ClickException would return exit 1 | — Done (05-03): runtime/cli.py |
+| interval_seconds=30.0 for all factory agents in runner.py | Batch job mode — needs to complete quickly rather than poll every 600s | — Done (05-03): factory/runner.py |
+| run_factory() stagger offsets: 0, 7.5, 15, 22.5s across 30s interval | Prevents all four agents hitting SQLite WAL write lock simultaneously | — Done (05-03): factory/runner.py |
