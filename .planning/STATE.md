@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-07T13:37:54.569Z"
+last_updated: "2026-03-07T16:43:32.512Z"
 progress:
   total_phases: 7
   completed_phases: 5
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Session Log
 
-### 2026-03-07 — Plan 05-04 executed (E2E tests — E2E-01 and E2E-02 GREEN)
-- Stopped at: Completed 05-04-PLAN.md (checkpoint:human-verify pending)
-- Last commit: fd9ca1e feat(05-04): implement E2E tests — E2E-01 (full artifact) and E2E-02 (DB seeding)
-- Key decisions: open_write()/open_read() return aiosqlite.Connection directly (await required, not async with) — plan template had incorrect async with pattern; fixed per existing test_boss.py usage; E2E tests use no LLM calls — fixture RoleSpec data drives generator functions directly; agent_status table queryability verified via SELECT count(*) — actual rows seeded at agent startup not factory time; 128 tests GREEN at 88.41% coverage; E2E-01 and E2E-02 both GREEN
+### 2026-03-07 — Plan 05-04 complete (E2E tests — checkpoint:human-verify approved, Phase 5 closed)
+- Stopped at: Completed 05-04-PLAN.md — Phase 5 fully closed
+- Last commit: ba33475 fix(05-04): isolate test_add_role from real clusters/ filesystem state
+- Key decisions: open_write()/open_read() return aiosqlite.Connection directly (await required, not async with) — plan template had incorrect async with pattern; fixed per existing test_boss.py usage; E2E tests use no LLM calls — fixture RoleSpec data drives generator functions directly; agent_status table queryability verified via SELECT count(*) — actual rows seeded at agent startup not factory time; test_add_role isolation: pass FACTORY_CLUSTERS_BASE via env so test resolves to empty tmp_path — prevents filesystem bleed from manual CLI demo directories; 128 tests GREEN at 89.03% coverage; E2E-01 and E2E-02 both GREEN; checkpoint:human-verify approved
 
 ### 2026-03-07 — Plan 05-03 executed (factory CLI + runner — CLI-01 to CLI-07 GREEN)
 - Stopped at: Completed 05-03-PLAN.md
@@ -146,9 +146,9 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-- Phase 5 of 7: Factory Cluster — Plan 05-04 complete (E2E tests), checkpoint:human-verify pending
-- Status: 128 tests GREEN at 88.41% coverage; E2E-01 and E2E-02 GREEN; all 25 plans complete
-- Next: checkpoint:human-verify — run full suite, confirm coverage >= 80%, optionally test CLI manually
+- Phase 5 of 7: COMPLETE — Plan 05-04 done (E2E tests, checkpoint:human-verify approved), all 25 plans complete
+- Status: 128 tests GREEN at 89.03% coverage; E2E-01 and E2E-02 GREEN; Phase 5 fully closed
+- Next: Phase 6 — Demo Cluster + Integration
 
 ## Blockers / Concerns
 
@@ -216,3 +216,4 @@ None.
 | interval_seconds=30.0 for all factory agents in runner.py | Batch job mode — needs to complete quickly rather than poll every 600s | — Done (05-03): factory/runner.py |
 | run_factory() stagger offsets: 0, 7.5, 15, 22.5s across 30s interval | Prevents all four agents hitting SQLite WAL write lock simultaneously | — Done (05-03): factory/runner.py |
 | open_write()/open_read() return aiosqlite.Connection directly (await required, not async with) | Plan template used incorrect async with pattern; DatabaseManager API uses plain await + explicit close per conftest.py and test_boss.py | — Done (05-04): tests/test_factory_e2e.py |
+| CLI tests that touch filesystem must pass FACTORY_CLUSTERS_BASE env var via runner.invoke(..., env=env) | Prevents test failure when CWD clusters/ directory contains real cluster dirs from manual demos; isolates to tmp_path — matches test_collision_policy pattern | — Done (05-04): tests/test_factory_cli.py test_add_role |

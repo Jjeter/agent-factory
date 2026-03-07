@@ -16,7 +16,7 @@ requires:
 provides:
   - E2E-01: test_full_artifact_created verifying complete cluster directory (Dockerfile, requirements.txt, launch.sh, docker-compose.yml, runtime/, config/agents/, db/schema.sql, .env.example)
   - E2E-02: test_db_seeded_correctly verifying goal row roundtrip and agent_status table queryability
-  - 128 tests GREEN at 88.41% coverage with factory/ measured
+  - 128 tests GREEN at 89.03% coverage with factory/ measured — Phase 5 fully closed
 
 affects: [phase-6-demo-cluster, phase-7-hardening]
 
@@ -31,11 +31,13 @@ key-files:
   created: []
   modified:
     - tests/test_factory_e2e.py
+    - tests/test_factory_cli.py
 
 key-decisions:
   - "open_write()/open_read() return aiosqlite.Connection directly (await required, not async with) — plan template had incorrect async with pattern; fixed per existing test_boss.py usage"
   - "E2E tests use no LLM calls — fixture RoleSpec data drives generator functions directly"
   - "agent_status table queryability verified by SELECT count(*) after DatabaseManager.up() — actual rows seeded at agent startup not factory time"
+  - "test_add_role isolation: pass FACTORY_CLUSTERS_BASE via env so test resolves to empty tmp_path — prevents filesystem bleed from manual CLI demo directories"
 
 patterns-established:
   - "E2E fixture pattern: importorskip at test function body scope (not module), direct await of open_write/open_read with finally/close"
@@ -49,34 +51,40 @@ completed: 2026-03-07
 
 # Phase 5 Plan 04: E2E Tests Summary
 
-**E2E-01 and E2E-02 integration tests close Phase 5 — 128 tests GREEN at 88.41% coverage with factory/ package measured**
+**E2E-01 and E2E-02 integration tests close Phase 5 — 128 tests GREEN at 89.03% coverage with factory/ package measured and checkpoint:human-verify approved**
 
 ## Performance
 
-- **Duration:** 3 min
+- **Duration:** ~20 min (including checkpoint)
 - **Started:** 2026-03-07T13:33:56Z
-- **Completed:** 2026-03-07T13:36:57Z
-- **Tasks:** 1 (of 1 auto tasks; checkpoint:human-verify pending)
-- **Files modified:** 1
+- **Completed:** 2026-03-07T13:53:00Z
+- **Tasks:** 1 auto + 1 checkpoint (human-verify, approved)
+- **Files modified:** 2
 
 ## Accomplishments
 - test_full_artifact_created (E2E-01): verifies full cluster artifact directory structure matching REQUIREMENTS §5, including Dockerfile (FROM python:3.12-slim), requirements.txt (contains "anthropic"), launch.sh (ANTHROPIC_API_KEY guard + exit 1), docker-compose.yml (valid YAML with boss/critic/analyst services), runtime/__init__.py, config/agents/*.yaml, db/schema.sql, .env.example
 - test_db_seeded_correctly (E2E-02): verifies goal row INSERT and SELECT roundtrip with id/title/description/status fields, and agent_status table queryability after DatabaseManager.up()
-- Full pytest suite: 128 tests GREEN, 88.41% overall coverage (factory/ included)
+- Full pytest suite: 128 tests GREEN, 89.03% overall coverage (factory/ included) — checkpoint approved
+- Auto-fixed test_add_role filesystem isolation (clusters/test-cluster existed from manual demo, causing API authentication attempt)
 
 ## Task Commits
 
 Each task was committed atomically:
 
 1. **Task 1: Implement E2E tests** - `fd9ca1e` (feat)
+2. **Auto-fix: test_add_role filesystem isolation** - `ba33475` (fix)
+
+**Plan metadata (previous session):** `fdaec9c` (docs: complete E2E test plan — checkpoint pending)
 
 ## Files Created/Modified
 - `tests/test_factory_e2e.py` - Replaced xfail stubs with full E2E-01 and E2E-02 tests
+- `tests/test_factory_cli.py` - test_add_role: added FACTORY_CLUSTERS_BASE env isolation to prevent filesystem bleed
 
 ## Decisions Made
 - `open_write()/open_read()` return `aiosqlite.Connection` directly — must be awaited (not used as `async with`). Plan template used `async with mgr.open_write() as conn:` which is incorrect. Fixed to `conn = await mgr.open_write()` with explicit `finally: await conn.close()`.
 - E2E tests use no LLM calls — all generator functions called directly with fixture RoleSpec data.
 - agent_status table queryability verified via `SELECT count(*) as cnt FROM agent_status` — table must exist and be queryable; actual agent rows populated at runner startup (not factory time).
+- CLI tests that invoke filesystem-touching commands must pass `FACTORY_CLUSTERS_BASE` env var via `runner.invoke(..., env=env)` to isolate from CWD state. Applied to test_add_role to match the pattern already used by test_collision_policy.
 
 ## Deviations from Plan
 
@@ -92,19 +100,30 @@ Each task was committed atomically:
 
 ---
 
-**Total deviations:** 1 auto-fixed (Rule 1 — bug in plan template)
-**Impact on plan:** Necessary correctness fix. No scope creep. Both tests GREEN as specified.
+**2. [Rule 1 - Bug] Isolated test_add_role from real clusters/ filesystem state**
+- **Found during:** Final coverage gate run after checkpoint approval
+- **Issue:** `clusters/test-cluster/` existed on disk from manual CLI demo. The command found the directory and proceeded to call Anthropic API for role enrichment — failing with `TypeError: "Could not resolve authentication method"`. Test was previously passing only because the directory didn't exist.
+- **Fix:** Added `FACTORY_CLUSTERS_BASE` env var pointing to `tmp_path / "clusters"` (non-existent) so command returns exit 0 with "not found" message — matches test expectation and mirrors test_collision_policy pattern.
+- **Files modified:** `tests/test_factory_cli.py`
+- **Verification:** `python -m pytest tests/test_factory_cli.py::test_add_role -v --no-cov` — 1 passed; full suite 128 passed at 89.03%
+- **Committed in:** `ba33475`
+
+---
+
+**Total deviations:** 2 auto-fixed (2x Rule 1 — bugs)
+**Impact on plan:** Both necessary correctness fixes. No scope creep. All 128 tests GREEN, checkpoint approved.
 
 ## Issues Encountered
 - Plan template contained incorrect `async with mgr.open_write() as conn:` pattern. The DatabaseManager API uses plain `await` + explicit close (not async context manager). Identified from test failure traceback and confirmed by inspecting conftest.py and test_boss.py. Auto-fixed per Rule 1.
+- Manual CLI demo had left `clusters/test-cluster/` on disk, causing test_add_role to fail in the final coverage gate run. Auto-fixed per Rule 1 by adding FACTORY_CLUSTERS_BASE env isolation.
 
 ## User Setup Required
 None - no external service configuration required.
 
 ## Next Phase Readiness
-- Phase 5 complete: 128 tests GREEN at 88.41% coverage, E2E-01 and E2E-02 GREEN
-- checkpoint:human-verify pending — user should run full suite and confirm: `python -m pytest --cov=runtime --cov=factory --cov-report=term-missing --cov-fail-under=80 -q`
+- Phase 5 fully closed: 128 tests GREEN at 89.03% coverage, E2E-01 and E2E-02 GREEN, checkpoint:human-verify approved
 - Phase 6 (Demo Cluster + Integration) is unblocked
+- All 17 factory tests GREEN: GEN-01 to GEN-05 (generator), PIPELINE-01 to PIPELINE-03 (pipeline), CLI-01 to CLI-07 (factory CLI), E2E-01 and E2E-02 (end-to-end)
 
 ---
 *Phase: 05-factory-cluster-core-product*
