@@ -39,7 +39,7 @@ created: 2026-03-07
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
 | 5-GEN-01 | generator | 0 | GEN-01 | unit | `pytest tests/test_factory_generator.py::test_render_agent_yaml -x` | ❌ W0 | ⬜ pending |
-| 5-GEN-02 | generator | 0 | GEN-02 | integration | `pytest tests/test_factory_e2e.py::test_docker_compose_validates -x` | ❌ W0 | ⬜ pending |
+| 5-GEN-02 | generator | 0 | GEN-02 | unit | `pytest tests/test_factory_generator.py::test_render_docker_compose -x` | ❌ W0 | ⬜ pending |
 | 5-GEN-03 | generator | 0 | GEN-03 | unit | `pytest tests/test_factory_generator.py::test_render_cluster_yaml -x` | ❌ W0 | ⬜ pending |
 | 5-GEN-04 | generator | 0 | GEN-04 | unit | `pytest tests/test_factory_generator.py::test_launch_sh_fails_without_key -x` | ❌ W0 | ⬜ pending |
 | 5-GEN-05 | generator | 0 | GEN-05 | unit | `pytest tests/test_factory_generator.py::test_copy_runtime -x` | ❌ W0 | ⬜ pending |
@@ -58,6 +58,8 @@ created: 2026-03-07
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
+**Note on GEN-02:** The automated command runs `test_render_docker_compose` in `tests/test_factory_generator.py` (unit test for the render function). Docker Compose validation (`docker compose config`) is a manual-only verification listed below — it requires Docker installed and is skipped in CI.
+
 ---
 
 ## Wave 0 Requirements
@@ -68,9 +70,10 @@ created: 2026-03-07
 - [ ] `tests/test_factory_e2e.py` — stubs for E2E-01, E2E-02
 - [ ] `factory/__init__.py` — empty package marker
 - [ ] `factory/models.py` — RoleSpec, RolesResult, FitCheckResult stubs
-- [ ] `factory/generator.py` — function stubs (no implementation yet)
+- [ ] `factory/generator.py` — function stubs including render_dockerfile, render_requirements_txt
 - [ ] `factory/pipeline.py` — pipeline function stubs
 - [ ] `factory/boss.py` — FactoryBossAgent stub
+- [ ] `factory/workers.py` — FactoryResearcherAgent, FactorySecurityCheckerAgent, FactoryExecutorAgent stubs
 - [ ] `factory/runner.py` — subprocess entry point stub
 - [ ] Update `pyproject.toml`: add `"factory"` to wheel packages, add `--cov=factory` to addopts
 

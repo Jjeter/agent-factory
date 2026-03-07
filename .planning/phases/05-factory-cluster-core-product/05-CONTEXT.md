@@ -150,6 +150,7 @@ Cluster ready: ./clusters/analyze-pdfs/
 - `agent-factory logs <cluster> [--agent <id>]` streaming — mentioned in REQUIREMENTS §6 but complex; Phase 6 or 7
 - Auto-spawn new containers when boss detects role gap (boss shells out to docker compose) — explicitly deferred; user-initiated `add-role` is Phase 5 scope
 - Multi-goal factory clusters — out of scope for v0.1.0 (REQUIREMENTS §10)
+- `agent-factory approve <cluster-name> <task-id>` — REQUIREMENTS §6 lists this CLI command for manual task approval, but it requires the full task state machine approval flow and review UI. Deferred to Phase 6 alongside the demo cluster and integration work where manual review workflows will be exercised end-to-end.
 
 </deferred>
 
