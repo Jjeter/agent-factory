@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-07T17:03:18.134Z"
+last_updated: "2026-03-08T11:50:00Z"
 progress:
   total_phases: 7
   completed_phases: 5
-  total_plans: 25
-  completed_plans: 25
+  total_plans: 29
+  completed_plans: 26
 ---
 
 # Agent Factory — State
@@ -23,6 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 **Current focus:** Phase 5 — Factory Cluster Core Product
 
 ## Session Log
+
+### 2026-03-08 — Plan 06-01 executed (TDD RED gate — 14 xfail stubs for approve/logs/demo/artifact)
+- Stopped at: Completed 06-01-PLAN.md
+- Last commit: 34a5a04 test(06-01): create tests/test_demo_artifact.py — 5 xfail artifact structure stubs
+- Key decisions: xfail(strict=False) for all 14 stubs (consistent with prior phase pattern); shared stdlib sqlite3 helpers for DB seeding in test_factory_cli.py (no asyncio complexity); test_demo_artifact.py checks filesystem paths only — no importorskip needed; 128 GREEN + 14 xfailed at 89.03% coverage
 
 ### 2026-03-07 — Plan 05-04 complete (E2E tests — checkpoint:human-verify approved, Phase 5 closed)
 - Stopped at: Completed 05-04-PLAN.md — Phase 5 fully closed
@@ -146,9 +151,9 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-- Phase 5 of 7: COMPLETE — Plan 05-04 done (E2E tests, checkpoint:human-verify approved), all 25 plans complete
-- Status: 128 tests GREEN at 89.03% coverage; E2E-01 and E2E-02 GREEN; Phase 5 fully closed
-- Next: Phase 6 — Demo Cluster + Integration
+- Phase 6 of 7: IN PROGRESS — Plan 06-01 done (TDD RED gate: 14 xfail stubs)
+- Status: 128 tests GREEN + 14 xfailed at 89.03% coverage; Phase 6 Wave 1 RED gate set
+- Next: Phase 6 Plan 02 — approve + logs implementation (Wave 1)
 
 ## Blockers / Concerns
 
@@ -217,3 +222,6 @@ None.
 | run_factory() stagger offsets: 0, 7.5, 15, 22.5s across 30s interval | Prevents all four agents hitting SQLite WAL write lock simultaneously | — Done (05-03): factory/runner.py |
 | open_write()/open_read() return aiosqlite.Connection directly (await required, not async with) | Plan template used incorrect async with pattern; DatabaseManager API uses plain await + explicit close per conftest.py and test_boss.py | — Done (05-04): tests/test_factory_e2e.py |
 | CLI tests that touch filesystem must pass FACTORY_CLUSTERS_BASE env var via runner.invoke(..., env=env) | Prevents test failure when CWD clusters/ directory contains real cluster dirs from manual demos; isolates to tmp_path — matches test_collision_policy pattern | — Done (05-04): tests/test_factory_cli.py test_add_role |
+| xfail(strict=False) for all Phase 6 stubs | Allows unexpected passes without breaking the gate; consistent with Phases 3-5 TDD RED pattern | — Done (06-01): all 14 stubs |
+| stdlib sqlite3 seeding helpers in test_factory_cli.py (not aiosqlite) | Avoids asyncio.run() nesting in synchronous test setup; cleaner fixtures | — Done (06-01): _make_cluster_db/_seed_* helpers |
+| test_demo_artifact.py uses bare Path() relative to project root, no importorskip | Artifact tests check filesystem paths only — no module imports; pytest CWD is project root | — Done (06-01): tests/test_demo_artifact.py |
