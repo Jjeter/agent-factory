@@ -178,13 +178,15 @@ Plans:
 - `cluster tasks list --status approved` shows the completed task with correct document attached
 - CI smoke test passes on clean environment
 
+**Status: COMPLETE** — 4/4 plans executed; 128 tests GREEN + 14 xpassed at 85.78% coverage; checkpoint:human-verify approved
+
 **Plans:** 4/4 plans complete
 
 Plans:
-- [ ] 06-01-PLAN.md — TDD RED stubs: 9 factory_cli stubs (approve + logs + demo) + test_demo_artifact.py (5 stubs)
-- [ ] 06-02-PLAN.md — agent-factory approve + agent-factory logs subcommands
-- [ ] 06-03-PLAN.md — agent-factory demo command + clusters/demo-date-arithmetic/ artifact + .gitignore fix
-- [ ] 06-04-PLAN.md — CI smoke test (.github/workflows/smoke-test.yml) + README.md + human checkpoint
+- [x] 06-01-PLAN.md — TDD RED stubs: 9 factory_cli stubs (approve + logs + demo) + test_demo_artifact.py (5 stubs)
+- [x] 06-02-PLAN.md — agent-factory approve + agent-factory logs subcommands
+- [x] 06-03-PLAN.md — agent-factory demo command + clusters/demo-date-arithmetic/ artifact + .gitignore fix
+- [x] 06-04-PLAN.md — CI smoke test (.github/workflows/smoke-test.yml) + README.md + human checkpoint
 
 ---
 
