@@ -1,6 +1,6 @@
 # Agent Factory — Roadmap
 
-*Last updated: 2026-03-07*
+*Last updated: 2026-03-08*
 *Milestone: v0.1.0 — Factory MVP*
 
 ---
@@ -153,11 +153,11 @@ Plans:
 **Plans:** 5/5 plans complete
 
 Plans:
-- [ ] 05-00-PLAN.md — TDD RED stubs + factory/ package scaffolding (Wave 1)
-- [ ] 05-01-PLAN.md — factory/models.py + factory/generator.py — pure artifact generators (Wave 2)
-- [ ] 05-02-PLAN.md — factory/pipeline.py + factory/boss.py — role decomposition pipeline (Wave 3)
-- [ ] 05-03-PLAN.md — factory CLI subcommands + factory/runner.py — fire-and-forget create (Wave 4)
-- [ ] 05-04-PLAN.md — E2E tests + coverage gate (Wave 5)
+- [x] 05-00-PLAN.md — TDD RED stubs + factory/ package scaffolding (Wave 1)
+- [x] 05-01-PLAN.md — factory/models.py + factory/generator.py — pure artifact generators (Wave 2)
+- [x] 05-02-PLAN.md — factory/pipeline.py + factory/boss.py — role decomposition pipeline (Wave 3)
+- [x] 05-03-PLAN.md — factory CLI subcommands + factory/runner.py — fire-and-forget create (Wave 4)
+- [x] 05-04-PLAN.md — E2E tests + coverage gate (Wave 5)
 
 ---
 
@@ -177,6 +177,14 @@ Plans:
 - All `activity_log` entries are present and coherent
 - `cluster tasks list --status approved` shows the completed task with correct document attached
 - CI smoke test passes on clean environment
+
+**Plans:** 4 plans
+
+Plans:
+- [ ] 06-01-PLAN.md — TDD RED stubs: 9 factory_cli stubs (approve + logs + demo) + test_demo_artifact.py (5 stubs)
+- [ ] 06-02-PLAN.md — agent-factory approve + agent-factory logs subcommands
+- [ ] 06-03-PLAN.md — agent-factory demo command + clusters/demo-date-arithmetic/ artifact + .gitignore fix
+- [ ] 06-04-PLAN.md — CI smoke test (.github/workflows/smoke-test.yml) + README.md + human checkpoint
 
 ---
 
