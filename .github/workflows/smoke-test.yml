@@ -1,0 +1,40 @@
+name: Smoke Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  smoke-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create .env for CI (placeholder key — no real LLM calls)
+        run: cp clusters/demo-date-arithmetic/.env.example clusters/demo-date-arithmetic/.env
+
+      - name: Verify sqlite3 available
+        run: sqlite3 --version
+
+      - name: Build demo cluster containers
+        working-directory: clusters/demo-date-arithmetic
+        run: docker compose build
+
+      - name: Start demo cluster containers (detached)
+        working-directory: clusters/demo-date-arithmetic
+        run: docker compose up -d
+
+      - name: Wait for container startup
+        run: sleep 15
+
+      - name: Verify pre-seeded agent_status rows
+        run: |
+          count=$(sqlite3 clusters/demo-date-arithmetic/db/cluster.db "SELECT count(*) FROM agent_status")
+          echo "agent_status row count: $count"
+          [ "$count" -ge 2 ] || (echo "FAIL: expected >= 2 rows, got $count" && exit 1)
+
+      - name: Tear down containers
+        if: always()
+        working-directory: clusters/demo-date-arithmetic
+        run: docker compose down --volumes
