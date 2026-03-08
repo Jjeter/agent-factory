@@ -3,8 +3,10 @@
 import asyncio
 import os
 import re
+import sqlite3 as _sqlite3
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import click
@@ -408,6 +410,84 @@ async def _do_factory_logs(
         click.echo(
             tabulate(table, headers=["Timestamp", "Agent", "Action", "Details"], tablefmt="simple")
         )
+
+
+# ---------------------------------------------------------------------------
+# factory_cli: demo subcommand (Phase 6)
+# ---------------------------------------------------------------------------
+
+
+@factory_cli.command(name="demo")
+def factory_demo() -> None:
+    """Run a live demo: factory creates a coding cluster and you watch it work."""
+    asyncio.run(_do_demo_setup())
+    _poll_demo_until_approved(
+        str(_clusters_base() / "demo-date-arithmetic" / "db" / "cluster.db"),
+        poll_interval=5.0,
+    )
+
+
+async def _do_demo_setup() -> None:
+    """Create demo cluster goal in factory DB and start factory runner subprocess."""
+    from runtime.database import DatabaseManager
+    from runtime.models import _uuid, _now_iso
+
+    demo_goal = "Write a Python utility library for date arithmetic"
+    cluster_name = "demo-date-arithmetic"
+    factory_home = _factory_home()
+    factory_db = factory_home / "factory.db"
+    factory_home.mkdir(parents=True, exist_ok=True)
+    cluster_dir = _clusters_base() / cluster_name
+    cluster_dir.mkdir(parents=True, exist_ok=True)
+
+    mgr = DatabaseManager(factory_db)
+    await mgr.up()
+    goal_id = _uuid()
+    db = await mgr.open_write()
+    try:
+        await db.execute(
+            "INSERT INTO goals (id, title, description, status, created_at) VALUES (?, ?, ?, 'active', ?)",
+            (goal_id, cluster_name, demo_goal, _now_iso()),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    subprocess.Popen(
+        [sys.executable, "-m", "factory.runner", goal_id, str(factory_db)],
+        close_fds=True,
+    )
+
+    click.echo(f"Demo cluster '{cluster_name}' started. Watching for task completion...")
+    click.echo(f"  Goal: {demo_goal}")
+    click.echo(f"  Cluster output: {_clusters_base() / cluster_name}/")
+    click.echo()
+
+
+def _poll_demo_until_approved(cluster_db_path: str, poll_interval: float = 5.0) -> None:
+    """Synchronous polling loop — reads cluster DB and overwrites current line with \\r."""
+    while True:
+        try:
+            conn = _sqlite3.connect(cluster_db_path)
+            conn.row_factory = _sqlite3.Row
+            cur = conn.execute("SELECT status, COUNT(*) as cnt FROM tasks GROUP BY status")
+            counts = {row["status"]: row["cnt"] for row in cur.fetchall()}
+            conn.close()
+        except _sqlite3.OperationalError:
+            counts = {}
+        approved = counts.get("approved", 0)
+        review = counts.get("review", 0)
+        in_progress = counts.get("in-progress", 0)
+        todo = counts.get("todo", 0)
+        sys.stdout.write(
+            f"\r  todo={todo} | in-progress={in_progress} | review={review} | approved={approved}   "
+        )
+        sys.stdout.flush()
+        if approved >= 1:
+            break
+        time.sleep(poll_interval)
+    print()
+    click.echo("\nAt least one task reached 'approved'. Use 'agent-factory approve' for final sign-off.")
 
 
 # ---------------------------------------------------------------------------
