@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-08T11:50:00Z"
+last_updated: "2026-03-08T13:22:40.885Z"
 progress:
   total_phases: 7
   completed_phases: 5
   total_plans: 29
-  completed_plans: 26
+  completed_plans: 28
 ---
 
 # Agent Factory — State
@@ -23,6 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 **Current focus:** Phase 5 — Factory Cluster Core Product
 
 ## Session Log
+
+### 2026-03-08 — Plan 06-03 executed (demo subcommand + cluster artifact)
+- Stopped at: Completed 06-03-PLAN.md
+- Last commit: 268e40a feat(06-03): generate clusters/demo-date-arithmetic/ artifact and fix .gitignore
+- Key decisions: copy_runtime(base) not copy_runtime(base/runtime) — function appends /runtime/ internally; render_schema_sql() absent from factory.generator — use Path(runtime/schema.sql).read_text() directly; clusters/demo-date-arithmetic/runtime/state/ NOT committed (transient); gitignore negation !clusters/demo-date-arithmetic/db/cluster.db after exclusion rules; test_demo_exists and 4 test_demo_artifact stubs xpassed; 128 GREEN + 1 xfailed + 13 xpassed at 85.78% coverage
 
 ### 2026-03-08 — Plan 06-01 executed (TDD RED gate — 14 xfail stubs for approve/logs/demo/artifact)
 - Stopped at: Completed 06-01-PLAN.md
@@ -151,9 +156,9 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-- Phase 6 of 7: IN PROGRESS — Plan 06-01 done (TDD RED gate: 14 xfail stubs)
-- Status: 128 tests GREEN + 14 xfailed at 89.03% coverage; Phase 6 Wave 1 RED gate set
-- Next: Phase 6 Plan 02 — approve + logs implementation (Wave 1)
+- Phase 6 of 7: IN PROGRESS — Plan 06-03 done (demo subcommand + cluster artifact)
+- Status: 128 tests GREEN + 1 xfailed + 13 xpassed at 85.78% coverage; Wave 3 complete
+- Next: Phase 6 Plan 04 — artifact validation / CI hardening (Wave 4)
 
 ## Blockers / Concerns
 
@@ -225,3 +230,6 @@ None.
 | xfail(strict=False) for all Phase 6 stubs | Allows unexpected passes without breaking the gate; consistent with Phases 3-5 TDD RED pattern | — Done (06-01): all 14 stubs |
 | stdlib sqlite3 seeding helpers in test_factory_cli.py (not aiosqlite) | Avoids asyncio.run() nesting in synchronous test setup; cleaner fixtures | — Done (06-01): _make_cluster_db/_seed_* helpers |
 | test_demo_artifact.py uses bare Path() relative to project root, no importorskip | Artifact tests check filesystem paths only — no module imports; pytest CWD is project root | — Done (06-01): tests/test_demo_artifact.py |
+| copy_runtime(base) not copy_runtime(base/runtime) | Function appends /runtime/ internally; calling with parent produces single-level cluster/runtime/ not nested cluster/runtime/runtime/ | — Done (06-03): clusters/demo-date-arithmetic/runtime/ |
+| render_schema_sql() absent from factory.generator | Plan interface block was aspirational; use Path('runtime/schema.sql').read_text() directly — same content, no functional difference | — Done (06-03): clusters/demo-date-arithmetic/db/schema.sql |
+| gitignore negation !clusters/demo-date-arithmetic/db/cluster.db after exclusion rules | Git processes negation in order; negation must appear after clusters/*/db/*.db and *.db rules to take effect | — Done (06-03): .gitignore |
