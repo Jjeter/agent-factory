@@ -292,6 +292,125 @@ async def _do_factory_add_role(cluster_name: str, role_description: str) -> None
 
 
 # ---------------------------------------------------------------------------
+# factory_cli: approve / logs subcommands (Phase 6)
+# ---------------------------------------------------------------------------
+
+
+@factory_cli.command(name="approve")
+@click.argument("cluster_name")
+@click.argument("task_id")
+def factory_approve(cluster_name: str, task_id: str) -> None:
+    """Approve a task in 'review' state within a named cluster."""
+    asyncio.run(_do_factory_approve(cluster_name, task_id))
+
+
+async def _do_factory_approve(cluster_name: str, task_id: str) -> None:
+    from runtime.database import DatabaseManager
+
+    cluster_db = _clusters_base() / cluster_name / "db" / "cluster.db"
+    if not cluster_db.exists():
+        click.echo(f"Cluster '{cluster_name}' not found.")
+        return
+
+    mgr = DatabaseManager(cluster_db)
+    db = await mgr.open_read()
+    try:
+        async with db.execute(
+            "SELECT id, title, status FROM tasks WHERE id = ?", (task_id,)
+        ) as cur:
+            row = await cur.fetchone()
+    finally:
+        await db.close()
+
+    if row is None:
+        click.echo(f"Task '{task_id}' not found in cluster '{cluster_name}'.")
+        return
+
+    if row["status"] != "review":
+        click.echo(
+            f"Task '{task_id[:8]}' is in '{row['status']}' state, not 'review'. Cannot approve."
+        )
+        return
+
+    from runtime.models import _now_iso
+
+    db = await mgr.open_write()
+    try:
+        await db.execute(
+            "UPDATE tasks SET status = 'approved', updated_at = ? WHERE id = ?",
+            (_now_iso(), task_id),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    click.echo(f"Approved: {row['title']} ({task_id[:8]})")
+    click.echo(f"  Cluster: {cluster_name}")
+    click.echo(f"  Status: approved")
+
+
+@factory_cli.command(name="logs")
+@click.argument("cluster_name")
+@click.option("--tail", default=50, help="Number of most recent entries to show.")
+@click.option("--agent", "agent_filter", default=None, help="Filter by agent ID.")
+@click.option("--json", "as_json", is_flag=True, default=False, help="Output as JSON list.")
+def factory_logs(cluster_name: str, tail: int, agent_filter: str | None, as_json: bool) -> None:
+    """Show the activity log for a named cluster."""
+    asyncio.run(_do_factory_logs(cluster_name, tail, agent_filter, as_json))
+
+
+async def _do_factory_logs(
+    cluster_name: str, tail: int, agent_filter: str | None, as_json: bool
+) -> None:
+    from runtime.database import DatabaseManager
+
+    cluster_db = _clusters_base() / cluster_name / "db" / "cluster.db"
+    if not cluster_db.exists():
+        click.echo(f"Cluster '{cluster_name}' not found.")
+        return
+
+    mgr = DatabaseManager(cluster_db)
+    sql = "SELECT created_at, agent_id, action, details FROM activity_log"
+    params: list = []
+    if agent_filter:
+        sql += " WHERE agent_id = ?"
+        params.append(agent_filter)
+    sql += " ORDER BY created_at DESC LIMIT ?"
+    params.append(tail)
+
+    db = await mgr.open_read()
+    try:
+        async with db.execute(sql, params) as cur:
+            rows = await cur.fetchall()
+    finally:
+        await db.close()
+
+    if not rows:
+        click.echo("No activity log entries found.")
+        return
+
+    if as_json:
+        import json as _json
+
+        click.echo(_json.dumps([dict(r) for r in rows], indent=2))
+    else:
+        from tabulate import tabulate
+
+        table = [
+            [
+                r["created_at"],
+                r["agent_id"],
+                r["action"],
+                (r["details"] or "")[:40] + ("..." if r["details"] and len(r["details"]) > 40 else ""),
+            ]
+            for r in rows
+        ]
+        click.echo(
+            tabulate(table, headers=["Timestamp", "Agent", "Action", "Details"], tablefmt="simple")
+        )
+
+
+# ---------------------------------------------------------------------------
 # cluster goal subcommands (Phase 3)
 # ---------------------------------------------------------------------------
 
