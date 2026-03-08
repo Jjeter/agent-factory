@@ -1,0 +1,5 @@
+cluster_name: demo-date-arithmetic
+db_path: /data/cluster.db
+goal: Write a Python utility library for date arithmetic
+interval_seconds: 600.0
+jitter_seconds: 30.0

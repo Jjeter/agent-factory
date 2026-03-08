@@ -1,0 +1,5 @@
+agent_id: boss-01
+agent_role: boss
+stagger_offset_seconds: 0.0
+system_prompt: You are the boss agent coordinating this cluster.
+tool_allowlist: []

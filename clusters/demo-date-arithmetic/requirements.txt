@@ -1,0 +1,5 @@
+aiosqlite
+anthropic
+click
+pydantic
+tabulate

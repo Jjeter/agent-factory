@@ -30,6 +30,11 @@ runtime/state/
 
 # Docker
 clusters/*/db/*.db
+clusters/*/db/*.db-wal
+clusters/*/db/*.db-shm
+
+# Demo cluster DB is committed to repo for CI smoke test
+!clusters/demo-date-arithmetic/db/cluster.db
 
 # IDE
 .idea/

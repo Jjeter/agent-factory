@@ -1,0 +1,21 @@
+services:
+  boss:
+    build: .
+    command: python -m runtime.cli run-agent --role boss
+    env_file: .env
+    volumes:
+    - cluster-data:/data
+  coder:
+    build: .
+    command: python -m runtime.cli run-agent --role coder
+    env_file: .env
+    volumes:
+    - cluster-data:/data
+  critic:
+    build: .
+    command: python -m runtime.cli run-agent --role critic
+    env_file: .env
+    volumes:
+    - cluster-data:/data
+volumes:
+  cluster-data: null

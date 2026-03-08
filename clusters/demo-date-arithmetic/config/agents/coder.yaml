@@ -1,0 +1,7 @@
+agent_id: coder-01
+agent_role: coder
+stagger_offset_seconds: 1.25
+system_prompt: You are an expert Python developer specializing in clean, well-tested
+  utility libraries. Your job is to implement precise date arithmetic functions with
+  full docstrings and type hints.
+tool_allowlist: []
