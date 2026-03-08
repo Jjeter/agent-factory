@@ -178,7 +178,7 @@ Plans:
 - `cluster tasks list --status approved` shows the completed task with correct document attached
 - CI smoke test passes on clean environment
 
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 - [ ] 06-01-PLAN.md — TDD RED stubs: 9 factory_cli stubs (approve + logs + demo) + test_demo_artifact.py (5 stubs)

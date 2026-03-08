@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-08T13:22:40.885Z"
+last_updated: "2026-03-08T13:30:44.834Z"
 progress:
   total_phases: 7
-  completed_phases: 5
+  completed_phases: 6
   total_plans: 29
-  completed_plans: 28
+  completed_plans: 29
 ---
 
 # Agent Factory — State
@@ -23,6 +23,11 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 **Current focus:** Phase 5 — Factory Cluster Core Product
 
 ## Session Log
+
+### 2026-03-08 — Plan 06-04 executed (CI smoke test + README); checkpoint:human-verify pending
+- Stopped at: Completed 06-04-PLAN.md tasks 1-2; awaiting checkpoint:human-verify approval
+- Last commit: 2ec8ad2 feat(06-04): write project README.md
+- Key decisions: actions/checkout@v4 + docker compose (space, v2) in CI; no real API key in CI — placeholder .env sufficient (no LLM calls in 15s window); on: parsed as Python True by PyYAML (known quirk, GitHub reads correctly); no fabricated terminal output in README — descriptive prose only; 128 passed + 14 xpassed at 85.78% coverage
 
 ### 2026-03-08 — Plan 06-03 executed (demo subcommand + cluster artifact)
 - Stopped at: Completed 06-03-PLAN.md
@@ -156,9 +161,9 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-- Phase 6 of 7: IN PROGRESS — Plan 06-03 done (demo subcommand + cluster artifact)
-- Status: 128 tests GREEN + 1 xfailed + 13 xpassed at 85.78% coverage; Wave 3 complete
-- Next: Phase 6 Plan 04 — artifact validation / CI hardening (Wave 4)
+- Phase 6 of 7: AWAITING CHECKPOINT — Plan 06-04 tasks 1-2 complete; checkpoint:human-verify pending user approval
+- Status: 128 tests GREEN + 14 xpassed at 85.78% coverage; .github/workflows/smoke-test.yml + README.md delivered
+- Next: Phase 6 checkpoint:human-verify approval → Phase 7 (hardening + v0.1.0 release)
 
 ## Blockers / Concerns
 
@@ -233,3 +238,6 @@ None.
 | copy_runtime(base) not copy_runtime(base/runtime) | Function appends /runtime/ internally; calling with parent produces single-level cluster/runtime/ not nested cluster/runtime/runtime/ | — Done (06-03): clusters/demo-date-arithmetic/runtime/ |
 | render_schema_sql() absent from factory.generator | Plan interface block was aspirational; use Path('runtime/schema.sql').read_text() directly — same content, no functional difference | — Done (06-03): clusters/demo-date-arithmetic/db/schema.sql |
 | gitignore negation !clusters/demo-date-arithmetic/db/cluster.db after exclusion rules | Git processes negation in order; negation must appear after clusters/*/db/*.db and *.db rules to take effect | — Done (06-03): .gitignore |
+| actions/checkout@v4 + docker compose (space, v2) in smoke-test.yml | v2/v3 deprecated; docker-compose (hyphen, v1) removed from ubuntu-latest 2024; v2 is correct | — Done (06-04): .github/workflows/smoke-test.yml |
+| No real ANTHROPIC_API_KEY in CI; placeholder .env from .env.example is sufficient | Agents don't make LLM calls within the 15s startup window before docker compose down | — Done (06-04): .github/workflows/smoke-test.yml |
+| README walkthrough uses descriptive prose, no fabricated task IDs or terminal output | Per RESEARCH.md Pitfall 6: trace should only be added after running actual demo | — Done (06-04): README.md |
