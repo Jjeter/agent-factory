@@ -1,6 +1,6 @@
 # Agent Factory — Roadmap
 
-*Last updated: 2026-03-08*
+*Last updated: 2026-03-09*
 *Milestone: v0.1.0 — Factory MVP*
 
 ---
@@ -207,6 +207,14 @@ Plans:
 - All security checklist items from REQUIREMENTS §8 pass
 - Agent crash-and-restart cycle preserves task state correctly
 - 80%+ test coverage measured by `pytest --cov`
+
+**Plans:** 4 plans
+
+Plans:
+- [ ] 07-01-PLAN.md — TDD RED gate: security + AWOL + crash recovery stubs + CI workflow skeletons (Wave 1)
+- [ ] 07-02-PLAN.md — Security tests implementation: SEC-01 tool allowlist + SEC-02 cross-cluster DB isolation (Wave 2)
+- [ ] 07-03-PLAN.md — AWOL detection (BossAgent) + crash recovery (BaseAgent/WorkerAgent) (Wave 2)
+- [ ] 07-04-PLAN.md — CHANGELOG.md + coverage gate + checkpoint: PyPI Trusted Publisher setup + v0.1.0 tag (Wave 3)
 
 ---
 
