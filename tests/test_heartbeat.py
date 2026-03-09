@@ -365,3 +365,22 @@ async def test_jitter_clamped(tmp_path):
 
     # Should complete without ValueError from asyncio.sleep receiving a negative float
     await agent.start()
+
+
+# ── Phase 7: Crash recovery stubs (TDD RED) ────────────────────────────────
+
+@pytest.mark.xfail(strict=False, reason="Crash recovery not yet implemented")
+@pytest.mark.asyncio
+async def test_crash_resume_in_progress_task(tmp_path):
+    """On restart, WorkerAgent resumes the task still in-progress in the DB (CRASH-01)."""
+    # State file contains current_task_id; DB still has that task in-progress for this agent
+    # Assert: do_own_tasks() resumes the task (calls _execute_task) without re-claiming
+    pytest.xfail("CRASH-01 not yet implemented — see 07-03-PLAN")
+
+@pytest.mark.xfail(strict=False, reason="Crash recovery re-assignment guard not yet implemented")
+@pytest.mark.asyncio
+async def test_crash_resume_skips_reassigned_task(tmp_path):
+    """On restart, WorkerAgent skips resume if the task was re-assigned to another agent (CRASH-02)."""
+    # State file has task T; DB shows T assigned to a different agent_id
+    # Assert: do_own_tasks() does NOT call _execute_task for T; falls through to normal claiming
+    pytest.xfail("CRASH-02 not yet implemented — see 07-03-PLAN")

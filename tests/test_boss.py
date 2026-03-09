@@ -951,3 +951,23 @@ async def test_evaluate_reviews_no_reviews_returns_pending(tmp_path):
     boss = _make_boss(mgr)
     status = await boss._evaluate_reviews(task_id)
     assert status == "pending"
+
+
+# ── Phase 7: AWOL detection stubs (TDD RED) ────────────────────────────────
+
+@pytest.mark.xfail(strict=False, reason="AWOL detection not yet implemented")
+@pytest.mark.asyncio
+async def test_check_awol_agents_fires_notifier(tmp_path):
+    """Boss calls notifier.notify_escalation() for an agent missing 3+ heartbeats."""
+    # AWOL-01 + AWOL-02
+    # Setup: seed agent_status with last_heartbeat = now - (4 * interval_seconds) ago
+    # Assert: notifier.notify_escalation() called with agent_id
+    # Assert: activity_log contains action='agent_awol' entry
+    pytest.xfail("AWOL detection not yet implemented — see 07-03-PLAN")
+
+@pytest.mark.xfail(strict=False, reason="AWOL deduplication not yet implemented")
+@pytest.mark.asyncio
+async def test_check_awol_agents_does_not_double_alert(tmp_path):
+    """Boss does not emit duplicate AWOL alerts for the same agent in one session."""
+    # AWOL dedup: _alerted_awol set prevents second alert on same agent
+    pytest.xfail("AWOL dedup not yet implemented — see 07-03-PLAN")
