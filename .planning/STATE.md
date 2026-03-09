@@ -24,6 +24,11 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Session Log
 
+### 2026-03-09 — Phase 7 context gathered
+- Stopped at: Phase 7 context gathered
+- Resume file: .planning/phases/07-hardening-v0-1-0-release/07-CONTEXT.md
+- Key decisions: PyPI publish via OIDC on tag push (TestPyPI gate first); full system runtime+factory; AWOL detection via last_heartbeat timestamp comparison (3× interval), notifier+activity_log, observe-only; crash recovery via _load_state() resume-first; truffleHog in CI gate; tool allowlist enforcement test (mock disallowed LLM tool call); cross-cluster DB isolation test (two tmp_path DBs); CHANGELOG single milestone entry (human-written); GitHub release with wheel+sdist; CONTRIBUTING.md deferred
+
 ### 2026-03-08 — Plan 06-04 complete (CI smoke test + README; checkpoint:human-verify approved)
 - Stopped at: Completed 06-04-PLAN.md — Phase 6 fully closed
 - Last commit: 2ec8ad2 feat(06-04): write project README.md
@@ -161,9 +166,9 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-- Phase 6 of 7: COMPLETE — All 4 plans executed; checkpoint:human-verify approved
-- Status: 128 tests GREEN + 14 xpassed at 85.78% coverage; Phase 6 all deliverables committed
-- Next: Phase 7 (hardening + v0.1.0 release)
+- Phase 7 of 7: Context gathered — ready for planning
+- Status: 128 tests GREEN + 14 xpassed at 85.78% coverage; Phase 6 complete
+- Next: /gsd:plan-phase 7
 
 ## Blockers / Concerns
 
