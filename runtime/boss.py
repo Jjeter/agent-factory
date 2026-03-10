@@ -89,6 +89,7 @@ class BossAgent(BaseAgent):
         super().__init__(config, notifier)
         self._llm = AsyncAnthropic()  # reads ANTHROPIC_API_KEY from env
         self._heartbeat_counter: int = 0
+        self._alerted_awol: set[str] = set()
 
     # ── Public overrides ───────────────────────────────────────────────────
 
@@ -104,9 +105,10 @@ class BossAgent(BaseAgent):
             # "pending" → do nothing
 
     async def do_own_tasks(self) -> None:
-        """Stuck detection (every tick) + gap-fill (every 3 ticks)."""
+        """Stuck detection (every tick) + AWOL detection + gap-fill (every 3 ticks)."""
         self._heartbeat_counter += 1
         await self._detect_stuck_tasks()
+        await self._check_awol_agents()
         if self._heartbeat_counter % 3 == 0:
             await self._gap_fill_and_completion_check()
 
@@ -226,6 +228,59 @@ class BossAgent(BaseAgent):
         finally:
             await db.close()
         logger.info("Boss posted unblocking hint for task %s", task_id)
+
+    # ── AWOL detection ────────────────────────────────────────────────────
+
+    async def _check_awol_agents(self) -> None:
+        """Detect agents that missed 3+ consecutive heartbeats."""
+        now = datetime.now(timezone.utc)
+        db = await self._db.open_read()
+        try:
+            async with db.execute(
+                "SELECT agent_id, agent_role, last_heartbeat FROM agent_status"
+            ) as cur:
+                rows = await cur.fetchall()
+        finally:
+            await db.close()
+        for row in rows:
+            if row["last_heartbeat"] is None:
+                continue  # Never heartbeated yet — not AWOL
+            last = datetime.fromisoformat(row["last_heartbeat"])
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
+            threshold = self._config.interval_seconds * 3
+            if (now - last).total_seconds() > threshold:
+                await self._alert_awol_agent(row["agent_id"], row["agent_role"])
+
+    async def _alert_awol_agent(self, agent_id: str, agent_role: str) -> None:
+        """Alert once per session for an AWOL agent; write activity_log entry."""
+        if agent_id in self._alerted_awol:
+            return  # Already alerted this session — dedup guard
+        reason = (
+            f"Agent {agent_id} (role={agent_role}) has not heartbeated in "
+            f"over {self._config.interval_seconds * 3:.0f}s (3× interval)"
+        )
+        await self._notifier.notify_escalation(agent_id, reason)
+        now = _now_iso()
+        db = await self._db.open_write()
+        try:
+            await db.execute(
+                "INSERT INTO activity_log (id, agent_id, action, details, created_at) "
+                "VALUES (?, ?, 'agent_awol', ?, ?)",
+                (
+                    _uuid(),
+                    self._config.agent_id,
+                    json.dumps({"awol_agent_id": agent_id, "agent_role": agent_role}),
+                    now,
+                ),
+            )
+            await db.commit()
+        finally:
+            await db.close()
+        self._alerted_awol.add(agent_id)
+        logger.warning(
+            "Boss flagged agent %s (role=%s) as AWOL", agent_id, agent_role
+        )
 
     # ── Gap-fill and completion check ──────────────────────────────────────
 

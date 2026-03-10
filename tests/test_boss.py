@@ -953,21 +953,96 @@ async def test_evaluate_reviews_no_reviews_returns_pending(tmp_path):
     assert status == "pending"
 
 
-# ── Phase 7: AWOL detection stubs (TDD RED) ────────────────────────────────
+# ── Phase 7: AWOL detection (AWOL-01, AWOL-02) ──────────────────────────────
 
-@pytest.mark.xfail(strict=False, reason="AWOL detection not yet implemented")
+
 @pytest.mark.asyncio
 async def test_check_awol_agents_fires_notifier(tmp_path):
-    """Boss calls notifier.notify_escalation() for an agent missing 3+ heartbeats."""
-    # AWOL-01 + AWOL-02
-    # Setup: seed agent_status with last_heartbeat = now - (4 * interval_seconds) ago
-    # Assert: notifier.notify_escalation() called with agent_id
-    # Assert: activity_log contains action='agent_awol' entry
-    pytest.xfail("AWOL detection not yet implemented — see 07-03-PLAN")
+    """Boss calls notifier.notify_escalation() for an agent missing 3+ heartbeats (AWOL-01 + AWOL-02)."""
+    from runtime.notifier import StdoutNotifier
+    from datetime import timedelta
 
-@pytest.mark.xfail(strict=False, reason="AWOL deduplication not yet implemented")
+    interval = 10.0  # seconds
+    mgr = await _make_db(tmp_path)
+
+    # Seed agent_status with last_heartbeat = now - (4 * interval) ago
+    awol_ts = (datetime.now(timezone.utc) - timedelta(seconds=4 * interval)).isoformat()
+    db = await mgr.open_write()
+    try:
+        await db.execute(
+            "INSERT INTO agent_status (agent_id, agent_role, status, last_heartbeat) "
+            "VALUES (?, ?, 'idle', ?)",
+            ("awol-agent-1", "worker", awol_ts),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    mock_notifier = AsyncMock(spec=StdoutNotifier)
+    config = AgentConfig(
+        agent_id="boss-1",
+        agent_role="boss",
+        interval_seconds=interval,
+        db_path=str(mgr._db_path),
+    )
+    from runtime.boss import BossAgent
+    boss = BossAgent(config, notifier=mock_notifier)
+
+    await boss._check_awol_agents()
+
+    # AWOL-01: notifier called with the AWOL agent_id
+    mock_notifier.notify_escalation.assert_called_once()
+    call_args = mock_notifier.notify_escalation.call_args
+    assert call_args[0][0] == "awol-agent-1"
+
+    # AWOL-02: activity_log has action='agent_awol' entry
+    db = await mgr.open_read()
+    try:
+        async with db.execute(
+            "SELECT action, details FROM activity_log WHERE action = 'agent_awol'"
+        ) as cur:
+            log_rows = await cur.fetchall()
+    finally:
+        await db.close()
+    assert len(log_rows) == 1
+    details = json.loads(log_rows[0]["details"])
+    assert details["awol_agent_id"] == "awol-agent-1"
+
+
 @pytest.mark.asyncio
 async def test_check_awol_agents_does_not_double_alert(tmp_path):
-    """Boss does not emit duplicate AWOL alerts for the same agent in one session."""
-    # AWOL dedup: _alerted_awol set prevents second alert on same agent
-    pytest.xfail("AWOL dedup not yet implemented — see 07-03-PLAN")
+    """Boss does not emit duplicate AWOL alerts for the same agent in one session (dedup)."""
+    from runtime.notifier import StdoutNotifier
+    from datetime import timedelta
+
+    interval = 10.0
+    mgr = await _make_db(tmp_path)
+
+    awol_ts = (datetime.now(timezone.utc) - timedelta(seconds=4 * interval)).isoformat()
+    db = await mgr.open_write()
+    try:
+        await db.execute(
+            "INSERT INTO agent_status (agent_id, agent_role, status, last_heartbeat) "
+            "VALUES (?, ?, 'idle', ?)",
+            ("awol-agent-2", "worker", awol_ts),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    mock_notifier = AsyncMock(spec=StdoutNotifier)
+    config = AgentConfig(
+        agent_id="boss-1",
+        agent_role="boss",
+        interval_seconds=interval,
+        db_path=str(mgr._db_path),
+    )
+    from runtime.boss import BossAgent
+    boss = BossAgent(config, notifier=mock_notifier)
+
+    # Call twice — dedup must prevent second alert
+    await boss._check_awol_agents()
+    await boss._check_awol_agents()
+
+    # notify_escalation must have been called exactly once (not twice)
+    assert mock_notifier.notify_escalation.call_count == 1
