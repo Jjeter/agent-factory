@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agent-factory"
+name = "agent-cluster-factory"
 version = "0.1.0"
 description = "A meta-level agentic workflow that creates independent, self-contained AI agent clusters"
 requires-python = ">=3.12"
