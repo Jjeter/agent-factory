@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v0.1
 milestone_name: milestone
 status: unknown
-last_updated: "2026-03-10T09:31:47.718Z"
+last_updated: "2026-03-10T09:41:24.067Z"
 progress:
   total_phases: 7
   completed_phases: 6
   total_plans: 33
-  completed_plans: 31
+  completed_plans: 32
 ---
 
 # Agent Factory — State
@@ -20,9 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-02-28)
 
 **Core value:** A working factory cluster that generates self-contained AI agent cluster artifacts
-**Current focus:** Phase 5 — Factory Cluster Core Product
+**Current focus:** Phase 7 — Hardening + v0.1.0 Release
 
 ## Session Log
+
+### 2026-03-10 — Plan 07-03 complete (AWOL detection + crash recovery — AWOL-01/02 + CRASH-01/02 GREEN)
+- Stopped at: Completed 07-03-PLAN.md
+- Last commit: 90f8475 feat(07-03): implement crash recovery in BaseAgent/WorkerAgent + replace crash stubs
+- Key decisions: AWOL uses 4-column activity_log INSERT (no task_id) — agent-level event, not task-level; getattr(self, '_current_task_id', None) in _write_state_file() for safe fallback in test subclasses; WorkerAgent._resumed_task_id cleared on first tick regardless of outcome (one-shot crash recovery); notify_escalation(agent_id, reason) repurposes task_id param position for agent_id; normal claiming path also tracks _current_task_id so state file captures task in all execution branches
 
 ### 2026-03-10 — Plan 07-02 complete (security enforcement — SEC-01 + SEC-02 GREEN)
 - Stopped at: Completed 07-02-PLAN.md
@@ -171,9 +176,9 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-- Phase 7 of 7: Context gathered — ready for planning
-- Status: 128 tests GREEN + 14 xpassed at 85.78% coverage; Phase 6 complete
-- Next: /gsd:plan-phase 7
+- Phase 7 of 7: Plan 07-03 complete — AWOL detection + crash recovery implemented
+- Status: 134 tests GREEN + 14 xpassed at 86.17% coverage; AWOL-01/02 + CRASH-01/02 GREEN
+- Next: 07-04 (packaging/release — CHANGELOG, PyPI publish, GitHub release)
 
 ## Blockers / Concerns
 
@@ -251,3 +256,6 @@ None.
 | actions/checkout@v4 + docker compose (space, v2) in smoke-test.yml | v2/v3 deprecated; docker-compose (hyphen, v1) removed from ubuntu-latest 2024; v2 is correct | — Done (06-04): .github/workflows/smoke-test.yml |
 | No real ANTHROPIC_API_KEY in CI; placeholder .env from .env.example is sufficient | Agents don't make LLM calls within the 15s startup window before docker compose down | — Done (06-04): .github/workflows/smoke-test.yml |
 | README walkthrough uses descriptive prose, no fabricated task IDs or terminal output | Per RESEARCH.md Pitfall 6: trace should only be added after running actual demo | — Done (06-04): README.md |
+| AWOL uses 4-column activity_log INSERT (no task_id) — agent-level event | Schema task_id is nullable; AWOL has no associated task; omitting column is correct | — Done (07-03): runtime/boss.py |
+| getattr(self, '_current_task_id', None) in _write_state_file() | Safe fallback for FixedTickAgent and other test subclasses that don't call WorkerAgent.__init__ | — Done (07-03): runtime/heartbeat.py |
+| WorkerAgent._resumed_task_id cleared after first tick regardless of outcome | One-shot semantics: crash recovery is best-effort, normal claiming takes over after | — Done (07-03): runtime/worker.py |
