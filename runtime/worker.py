@@ -192,7 +192,38 @@ class WorkerAgent(BaseAgent):
             system=self._config.system_prompt or "You are a helpful AI assistant completing assigned tasks.",
             messages=[{"role": "user", "content": prompt}],
         )
-        content = response.content[0].text
+
+        # Tool allowlist enforcement: check all content blocks for disallowed tool calls.
+        # Only blocks with type == "tool_use" (exact string match) are checked.
+        for block in response.content:
+            block_type = getattr(block, "type", None)
+            if block_type == "tool_use":
+                tool_name = getattr(block, "name", "")
+                allowlist = self._config.tool_allowlist
+                if allowlist and tool_name not in allowlist:
+                    logger.warning(
+                        "Agent %s blocked disallowed tool call '%s' (allowlist: %s)",
+                        self._config.agent_id,
+                        tool_name,
+                        allowlist,
+                    )
+                    return  # Skip execution — do NOT insert document or advance task
+
+        # Extract text content from first block that has a .text attribute.
+        # Guard: if no text-bearing block found, skip silently (e.g. tool_use-only response).
+        content: str | None = None
+        for block in response.content:
+            text = getattr(block, "text", None)
+            if isinstance(text, str):
+                content = text
+                break
+        if content is None:
+            logger.warning(
+                "Agent %s: LLM response has no text block — skipping task %s",
+                self._config.agent_id,
+                task_id,
+            )
+            return
 
         # Compute next document version
         next_version = 1 if prior_doc is None else (prior_doc["version"] + 1)
