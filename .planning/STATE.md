@@ -24,6 +24,11 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Session Log
 
+### 2026-03-10 — Plan 07-04 Task 1 complete (CHANGELOG.md written + coverage gate 86.17%) — checkpoint:human-verify for PyPI + tag push
+- Stopped at: 07-04 checkpoint:human-verify — PyPI Trusted Publisher registration + v0.1.0 tag push required
+- Last commit: d2848fd feat(07-04): write CHANGELOG.md for v0.1.0 release
+- Key decisions: CHANGELOG.md date 2026-03-10 (actual completion); ASCII arrows for cross-platform compatibility; coverage confirmed at 86.17% (no new implementation files added in plan 07-04)
+
 ### 2026-03-10 — Plan 07-03 complete (AWOL detection + crash recovery — AWOL-01/02 + CRASH-01/02 GREEN)
 - Stopped at: Completed 07-03-PLAN.md
 - Last commit: 90f8475 feat(07-03): implement crash recovery in BaseAgent/WorkerAgent + replace crash stubs
@@ -176,9 +181,9 @@ See: .planning/PROJECT.md (updated 2026-02-28)
 
 ## Current Position
 
-- Phase 7 of 7: Plan 07-03 complete — AWOL detection + crash recovery implemented
-- Status: 134 tests GREEN + 14 xpassed at 86.17% coverage; AWOL-01/02 + CRASH-01/02 GREEN
-- Next: 07-04 (packaging/release — CHANGELOG, PyPI publish, GitHub release)
+- Phase 7 of 7: Plan 07-04 Task 1 complete — CHANGELOG.md written, coverage gate 86.17% confirmed
+- Status: 134 tests GREEN + 14 xpassed at 86.17% coverage; all Phase 7 implementation tasks complete
+- Next: User must complete checkpoint:human-verify — register PyPI Trusted Publisher (testpypi + pypi environments), push v0.1.0 tag, verify publish.yml pipeline and GitHub release assets
 
 ## Blockers / Concerns
 

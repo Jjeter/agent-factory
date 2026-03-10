@@ -208,7 +208,7 @@ Plans:
 - Agent crash-and-restart cycle preserves task state correctly
 - 80%+ test coverage measured by `pytest --cov`
 
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 Plans:
 - [ ] 07-01-PLAN.md — TDD RED gate: security + AWOL + crash recovery stubs + CI workflow skeletons (Wave 1)
