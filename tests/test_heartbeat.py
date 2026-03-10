@@ -367,20 +367,107 @@ async def test_jitter_clamped(tmp_path):
     await agent.start()
 
 
-# ── Phase 7: Crash recovery stubs (TDD RED) ────────────────────────────────
+# ── Phase 7: Crash recovery (CRASH-01, CRASH-02) ───────────────────────────
 
-@pytest.mark.xfail(strict=False, reason="Crash recovery not yet implemented")
+
 @pytest.mark.asyncio
 async def test_crash_resume_in_progress_task(tmp_path):
     """On restart, WorkerAgent resumes the task still in-progress in the DB (CRASH-01)."""
-    # State file contains current_task_id; DB still has that task in-progress for this agent
-    # Assert: do_own_tasks() resumes the task (calls _execute_task) without re-claiming
-    pytest.xfail("CRASH-01 not yet implemented — see 07-03-PLAN")
+    from runtime.worker import WorkerAgent
+    from runtime.database import DatabaseManager
+    from runtime.models import _uuid, _now_iso
+    from unittest.mock import AsyncMock
 
-@pytest.mark.xfail(strict=False, reason="Crash recovery re-assignment guard not yet implemented")
+    db_file = tmp_path / "agent.db"
+    await _init_db(db_file)
+
+    cfg = _make_config(db_file, agent_id="worker-1")
+    mgr = DatabaseManager(db_file)
+
+    # Seed goal and task t1 (in-progress, assigned to this agent)
+    goal_id = _uuid()
+    task_id = "task-t1"
+    db = await mgr.open_write()
+    try:
+        await db.execute(
+            "INSERT INTO goals (id, title, description, status, created_at) VALUES (?, ?, ?, 'active', ?)",
+            (goal_id, "Test Goal", "A test goal", _now_iso()),
+        )
+        await db.execute(
+            "INSERT INTO tasks (id, goal_id, title, description, status, priority, "
+            "model_tier, escalation_count, reviewer_roles, assigned_to, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, 'in-progress', 50, 'haiku', 0, '[]', ?, ?, ?)",
+            (task_id, goal_id, "Task T1", "Do T1", "worker-1", _now_iso(), _now_iso()),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    worker = WorkerAgent(cfg)
+    # Simulate what start() sets from state file: worker was executing task-t1 before crash
+    worker._resumed_task_id = task_id
+
+    # Mock _execute_task to avoid LLM call
+    worker._execute_task = AsyncMock()
+
+    await worker.do_own_tasks()
+
+    # CRASH-01: _execute_task was called with the resumed task row (id = task_id)
+    worker._execute_task.assert_called_once()
+    call_args = worker._execute_task.call_args[0]
+    assert call_args[0]["id"] == task_id
+
+    # _resumed_task_id was cleared after first tick
+    assert worker._resumed_task_id is None
+
+
 @pytest.mark.asyncio
 async def test_crash_resume_skips_reassigned_task(tmp_path):
     """On restart, WorkerAgent skips resume if the task was re-assigned to another agent (CRASH-02)."""
-    # State file has task T; DB shows T assigned to a different agent_id
-    # Assert: do_own_tasks() does NOT call _execute_task for T; falls through to normal claiming
-    pytest.xfail("CRASH-02 not yet implemented — see 07-03-PLAN")
+    from runtime.worker import WorkerAgent
+    from runtime.database import DatabaseManager
+    from runtime.models import _uuid, _now_iso
+    from unittest.mock import AsyncMock
+
+    db_file = tmp_path / "agent.db"
+    await _init_db(db_file)
+
+    cfg = _make_config(db_file, agent_id="worker-1")
+    mgr = DatabaseManager(db_file)
+
+    # Seed goal and task t1 assigned to a DIFFERENT agent (re-assigned while this agent was down)
+    goal_id = _uuid()
+    task_id = "task-t2"
+    db = await mgr.open_write()
+    try:
+        await db.execute(
+            "INSERT INTO goals (id, title, description, status, created_at) VALUES (?, ?, ?, 'active', ?)",
+            (goal_id, "Test Goal", "A test goal", _now_iso()),
+        )
+        await db.execute(
+            "INSERT INTO tasks (id, goal_id, title, description, status, priority, "
+            "model_tier, escalation_count, reviewer_roles, assigned_to, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, 'in-progress', 50, 'haiku', 0, '[]', ?, ?, ?)",
+            # assigned to other-agent-99, NOT to worker-1
+            (task_id, goal_id, "Task T2", "Do T2", "other-agent-99", _now_iso(), _now_iso()),
+        )
+        await db.commit()
+    finally:
+        await db.close()
+
+    worker = WorkerAgent(cfg)
+    # State file said this worker was on task-t2 before crash, but DB shows re-assignment
+    worker._resumed_task_id = task_id
+
+    # Mock _execute_task to detect if it was called
+    worker._execute_task = AsyncMock()
+    # Also mock claiming so worker doesn't grab any task from normal flow
+    worker._try_claim_task = AsyncMock(return_value=None)
+
+    await worker.do_own_tasks()
+
+    # CRASH-02: _execute_task must NOT be called for the re-assigned task
+    worker._execute_task.assert_not_called()
+
+    # _resumed_task_id was cleared after first tick
+    assert worker._resumed_task_id is None

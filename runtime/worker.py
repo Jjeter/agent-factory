@@ -67,6 +67,7 @@ class WorkerAgent(BaseAgent):
     def __init__(self, config: AgentConfig, notifier: Notifier | None = None) -> None:
         super().__init__(config, notifier)
         self._llm = AsyncAnthropic()  # reads ANTHROPIC_API_KEY from env
+        self._resumed_task_id: str | None = None
 
     # ── Public overrides ───────────────────────────────────────────────────
 
@@ -77,13 +78,26 @@ class WorkerAgent(BaseAgent):
             await self._perform_review(task_id)
 
     async def do_own_tasks(self) -> None:
-        """Resume-first task claiming: check in-progress before claiming from todo."""
+        """Resume-first task claiming: crash recovery first, then in-progress, then todo."""
+        # Crash recovery: try to resume prior task if state file recorded one
+        if self._resumed_task_id is not None:
+            task = await self._fetch_task_if_still_mine(self._resumed_task_id)
+            self._resumed_task_id = None  # Clear after first tick regardless of outcome
+            if task is not None:
+                self._current_task_id = task["id"]
+                await self._execute_task(task)
+                self._current_task_id = None
+                return
+
+        # Normal claiming (resume-first via DB query, then todo claiming)
         task = await self._fetch_in_progress_task()
         if task is None:
             task = await self._try_claim_task()
         if task is None:
             return
+        self._current_task_id = task["id"]
         await self._execute_task(task)
+        self._current_task_id = None
 
     # ── Task claiming helpers ──────────────────────────────────────────────
 
@@ -95,6 +109,22 @@ class WorkerAgent(BaseAgent):
                 "SELECT id, title, description, model_tier FROM tasks "
                 "WHERE assigned_to = ? AND status = 'in-progress'",
                 (self._config.agent_id,),
+            ) as cur:
+                return await cur.fetchone()
+        finally:
+            await db.close()
+
+    async def _fetch_task_if_still_mine(self, task_id: str) -> Any:
+        """Return task row if it is still in-progress and assigned to this agent, else None.
+
+        RESEARCH.md Pitfall 5: always re-query DB — state file may be stale.
+        """
+        db = await self._db.open_read()
+        try:
+            async with db.execute(
+                "SELECT id, title, description, model_tier FROM tasks "
+                "WHERE id = ? AND assigned_to = ? AND status = 'in-progress'",
+                (task_id, self._config.agent_id),
             ) as cur:
                 return await cur.fetchone()
         finally:

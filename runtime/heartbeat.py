@@ -28,6 +28,8 @@ class BaseAgent:
         self._db = DatabaseManager(Path(config.db_path) if config.db_path else Path(":memory:"))
         self._stop_event = asyncio.Event()
         self._state_path = STATE_DIR / f"{config.agent_id}.json"
+        self._current_task_id: str | None = None
+        self._resumed_task_id: str | None = None
 
     async def start(self) -> None:
         """Entry point: load state, stagger delay, then run the heartbeat loop.
@@ -35,7 +37,8 @@ class BaseAgent:
         CancelledError propagates through wait_for and the while loop into the
         finally block, triggering _on_shutdown, then re-raises. Never caught here.
         """
-        self._load_state()  # Logs WARNING if state file missing or corrupt
+        prior_state = self._load_state()  # Logs WARNING if state file missing or corrupt
+        self._resumed_task_id = prior_state.get("current_task_id")
         if self._config.stagger_offset_seconds > 0:
             await asyncio.sleep(self._config.stagger_offset_seconds)
         try:
@@ -113,7 +116,10 @@ class BaseAgent:
     async def _write_state_file(self) -> None:
         """Write {last_heartbeat, current_task_id} atomically via tmp + Path.replace()."""
         STATE_DIR.mkdir(parents=True, exist_ok=True)
-        state = {"last_heartbeat": _now_iso(), "current_task_id": None}
+        state = {
+            "last_heartbeat": _now_iso(),
+            "current_task_id": getattr(self, "_current_task_id", None),
+        }
         tmp = self._state_path.with_suffix(".tmp")
         tmp.write_text(json.dumps(state), encoding="utf-8")
         tmp.replace(self._state_path)
